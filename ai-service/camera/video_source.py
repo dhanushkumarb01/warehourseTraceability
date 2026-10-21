@@ -1,0 +1,105 @@
+"""
+VideoSource — the common, resilient frame reader for every AI module.
+
+Wraps ``cv2.VideoCapture`` for all WareTrace capture kinds:
+  - ``file``    uploaded demo video (loops, so a finite clip behaves like live)
+  - ``stream``  RTSP / RTMP / HTTP network camera (credentials embedded by the
+                backend; the worker never decrypts anything itself)
+  - ``webcam``  local device index
+
+It handles open/read failures with exponential-backoff reconnection and
+optional frame resizing for performance. This is the single input layer the
+whole AI platform builds on.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any, Optional
+
+import cv2
+
+from utils.logger import get_logger
+
+log = get_logger("video")
+
+
+class VideoSource:
+    def __init__(self, capture: dict[str, Any], frame_width: int = 0,
+                 reconnect_delay: float = 3.0, max_reconnect_delay: float = 30.0):
+        self._capture = capture or {}
+        self._frame_width = int(frame_width)
+        self._reconnect_delay = float(reconnect_delay)
+        self._max_reconnect_delay = float(max_reconnect_delay)
+        self._cap: Optional[cv2.VideoCapture] = None
+        self._loop = bool(self._capture.get("loop"))
+        self._kind = self._capture.get("kind", "none")
+        self._backoff = self._reconnect_delay
+
+    # ── lifecycle ─────────────────────────────────────────────────────────────
+    def _target(self):
+        kind = self._kind
+        if kind == "file":
+            return self._capture.get("path")
+        if kind == "stream":
+            return self._capture.get("url")
+        if kind == "webcam":
+            return int(self._capture.get("index", 0))
+        return None
+
+    def open(self) -> bool:
+        target = self._target()
+        if target is None or target == "":
+            log.warning("Unusable capture source: %s", self._capture)
+            return False
+        self._cap = cv2.VideoCapture(target)
+        ok = bool(self._cap and self._cap.isOpened())
+        if ok:
+            self._backoff = self._reconnect_delay
+            log.info("Opened %s source", self._kind)
+        else:
+            log.warning("Could not open %s source", self._kind)
+        return ok
+
+    def is_open(self) -> bool:
+        return bool(self._cap and self._cap.isOpened())
+
+    def read(self):
+        """Return (ok, frame). Loops file sources; returns (False, None) on drop."""
+        if not self.is_open():
+            return False, None
+        ok, frame = self._cap.read()
+        if not ok:
+            if self._loop and self._kind == "file":
+                # restart the clip so a demo video behaves like a continuous feed
+                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ok, frame = self._cap.read()
+            if not ok:
+                return False, None
+        if self._frame_width and frame is not None:
+            frame = self._resize(frame)
+        return True, frame
+
+    def _resize(self, frame):
+        h, w = frame.shape[:2]
+        if w <= self._frame_width:
+            return frame
+        scale = self._frame_width / float(w)
+        return cv2.resize(frame, (self._frame_width, int(h * scale)), interpolation=cv2.INTER_AREA)
+
+    def reconnect(self) -> bool:
+        """Backoff then attempt to reopen. Backoff grows up to the configured max."""
+        self.release()
+        delay = self._backoff
+        log.info("Reconnecting %s source in %.1fs", self._kind, delay)
+        time.sleep(delay)
+        self._backoff = min(self._backoff * 2, self._max_reconnect_delay)
+        return self.open()
+
+    def release(self) -> None:
+        if self._cap is not None:
+            try:
+                self._cap.release()
+            except Exception:
+                pass
+            self._cap = None

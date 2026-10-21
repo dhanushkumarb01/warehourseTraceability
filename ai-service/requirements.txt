@@ -1,0 +1,14 @@
+opencv-python>=4.8,<5
+numpy>=1.24
+requests>=2.31
+python-dotenv>=1.0
+# Person detection (Wall Intrusion and future person-based use cases).
+# Pre-trained YOLO only — no training/fine-tuning. The weights (e.g. yolov8n.pt)
+# are downloaded automatically by ultralytics on first run.
+ultralytics>=8.0
+# Face recognition (Phase 14). Pre-trained ArcFace/RetinaFace via InsightFace —
+# no training/fine-tuning. Models (buffalo_l) download automatically on first run.
+insightface>=0.7
+onnxruntime>=1.16
+# Face enrollment HTTP API (backend posts registration images → embeddings).
+flask>=3.0
