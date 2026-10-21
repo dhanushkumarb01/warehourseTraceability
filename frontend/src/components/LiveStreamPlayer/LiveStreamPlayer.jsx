@@ -59,9 +59,10 @@ function LiveStreamPlayer({ camera, refreshSignal = 0, showControls = false, onS
   useEffect(() => {
     mounted.current = true;
     let stopped = false;
+    const viewer = viewerId.current;
     const open = async () => {
       // openStream returns { camera, stream } — use the stream status object.
-      try { applyStatus((await openStream(id, viewerId.current))?.stream); }
+      try { applyStatus((await openStream(id, viewer))?.stream); }
       catch { /* surfaced via status panel */ }
     };
     const poll = async () => {
@@ -75,7 +76,7 @@ function LiveStreamPlayer({ camera, refreshSignal = 0, showControls = false, onS
       stopped = true;
       mounted.current = false;
       if (pollTimer.current) clearTimeout(pollTimer.current);
-      closeStream(id, viewerId.current).catch(() => {});
+      closeStream(id, viewer).catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);

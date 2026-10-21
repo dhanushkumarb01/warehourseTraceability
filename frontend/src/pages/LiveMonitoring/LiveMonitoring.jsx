@@ -151,7 +151,6 @@ function CameraTile({ camera, onExpand, onDetails }) {
     else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
   };
 
-  const liveStatus = live?.status || camera.stream?.status || 'OFFLINE';
   const res = live?.resolution || camera.resolution;
   const fps = live?.fps ?? camera.fps;
 

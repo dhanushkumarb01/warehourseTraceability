@@ -30,7 +30,6 @@ import {
   removeMaterial,
 } from '../../services/mappingService';
 
-import StatusBadge from '../../components/StatusBadge/StatusBadge';
 import Toast from '../../components/Toast/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog';
 import MappingModal from '../../components/MappingModal/MappingModal';

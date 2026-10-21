@@ -26,6 +26,9 @@ function MaterialManagement() {
   const [materialToDelete, setMaterialToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
+  const showToast = (message, type = 'info') => setToast({ message, type });
+  const clearToast = () => setToast({ message: '', type: '' });
+
   const loadMaterials = async () => {
     try {
       setLoading(true);
@@ -40,10 +43,8 @@ function MaterialManagement() {
 
   useEffect(() => {
     loadMaterials();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const showToast = (message, type = 'info') => setToast({ message, type });
-  const clearToast = () => setToast({ message: '', type: '' });
 
   const handleCreateClick = () => {
     setFormMode('create');

@@ -31,6 +31,9 @@ function MaterialDetail() {
   const [lotToDelete, setLotToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
+  const showToast = (message, type = 'info') => setToast({ message, type });
+  const clearToast = () => setToast({ message: '', type: '' });
+
   const loadMaterial = async () => {
     try {
       setLoading(true);
@@ -45,10 +48,8 @@ function MaterialDetail() {
 
   useEffect(() => {
     loadMaterial();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
-
-  const showToast = (message, type = 'info') => setToast({ message, type });
-  const clearToast = () => setToast({ message: '', type: '' });
 
   const handleCreateLot = () => {
     setFormMode('create');

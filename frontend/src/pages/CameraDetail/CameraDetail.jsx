@@ -261,8 +261,6 @@ function CameraDetail() {
     </div>
   );
 
-  const wagonWait = wagonCfg ? `${Math.round(Number(wagonCfg.minDurationSec) || 0)}s` : null;
-
   return (
     <div className={styles.page}>
       <Toast message={toast.message} type={toast.type} onClose={clearToast} />

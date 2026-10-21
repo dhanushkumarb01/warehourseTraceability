@@ -56,7 +56,6 @@ function CameraPreview({ streamType, streamUrl, file = null, compact = false }) 
       }
     })();
     return () => { cancelled = true; stopStream(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamType]);
 
   // Switch webcam device.
@@ -122,7 +121,7 @@ function CameraPreview({ streamType, streamUrl, file = null, compact = false }) 
 
   // ── RTSP / RTMP (needs backend proxy) ───────────────────────────────────
   let host = '';
-  try { host = streamUrl ? new URL(streamUrl).host : ''; } catch { host = ''; }
+  try { host = streamUrl ? new URL(streamUrl).host : ''; } catch { /* malformed URL — leave host empty */ }
   return (
     <div className={frameCls}>
       <Placeholder
