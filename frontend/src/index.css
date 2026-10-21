@@ -1,0 +1,163 @@
+/**
+ * Global Design System — Warehouse Traceability Platform
+ *
+ * Imported once in main.jsx. Defines the enterprise design tokens, base
+ * typography, accessibility primitives, ambient polish and the shared motion
+ * library used across the product. Component styles live in *.module.css and
+ * consume these tokens via var(--token).
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
+
+/* ── Design Tokens ─────────────────────────────────────────────────────────── */
+:root {
+  /* Brand / primary (enterprise blue) */
+  --c-primary-50:  #eff6ff;
+  --c-primary-100: #dbeafe;
+  --c-primary-200: #bfdbfe;
+  --c-primary-400: #60a5fa;
+  --c-primary-500: #3b82f6;
+  --c-primary-600: #2563eb;
+  --c-primary-700: #1d4ed8;
+  --c-primary-800: #1e40af;
+  --c-primary: var(--c-primary-600);
+
+  /* Secondary / accent (deep indigo + teal control-tower feel) */
+  --c-accent-600: #4f46e5;
+  --c-accent-700: #4338ca;
+  --c-teal-600:   #0d9488;
+  --c-sky-500:    #0ea5e9;
+
+  /* Semantic status */
+  --c-success-50: #f0fdf4; --c-success: #16a34a; --c-success-700: #15803d;
+  --c-warning-50: #fffbeb; --c-warning: #d97706; --c-warning-700: #b45309;
+  --c-danger-50:  #fef2f2; --c-danger:  #dc2626; --c-danger-700:  #b91c1c;
+  --c-info-50:    #eff6ff; --c-info:    #2563eb;
+
+  /* Neutrals (slate) */
+  --c-bg:        #f1f5f9;
+  --c-surface:   #ffffff;
+  --c-surface-2: #f8fafc;
+  --c-border:    #e2e8f0;
+  --c-border-strong: #cbd5e1;
+  --c-text:      #1e293b;
+  --c-text-muted:#64748b;
+  --c-text-soft: #94a3b8;
+  --c-heading:   #0f172a;
+
+  /* Sidebar (dark control surface) */
+  --c-nav-bg:    #0b1220;
+  --c-nav-bg-2:  #0f172a;
+  --c-nav-text:  #cbd5e1;
+  --c-nav-muted: #64748b;
+
+  /* Spacing scale */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px;
+  --sp-6: 24px; --sp-8: 32px; --sp-10: 40px; --sp-12: 48px;
+
+  /* Radii */
+  --r-sm: 8px; --r-md: 10px; --r-lg: 14px; --r-xl: 18px; --r-2xl: 24px; --r-pill: 999px;
+
+  /* Elevation — refined, layered shadows */
+  --sh-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --sh-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --sh-md: 0 4px 12px rgba(15, 23, 42, 0.07), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --sh-lg: 0 12px 28px rgba(15, 23, 42, 0.10), 0 4px 10px rgba(15, 23, 42, 0.05);
+  --sh-xl: 0 24px 60px rgba(15, 23, 42, 0.16);
+  --sh-focus: 0 0 0 3px rgba(37, 99, 235, 0.18);
+
+  /* Motion */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast: 0.15s var(--ease);
+  --t-med: 0.25s var(--ease);
+
+  /* Layout */
+  --header-h: 60px;
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 76px;
+
+  color-scheme: light;
+}
+
+/* ── Reset ─────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background:
+    radial-gradient(1200px 600px at 100% -10%, rgba(37, 99, 235, 0.05), transparent 60%),
+    radial-gradient(1000px 500px at -10% 110%, rgba(13, 148, 136, 0.05), transparent 55%),
+    var(--c-bg);
+  background-attachment: fixed;
+  color: var(--c-text);
+  line-height: 1.5;
+  letter-spacing: -0.006em;
+}
+
+#root { width: 100%; min-height: 100vh; }
+
+/* ── Typography ────────────────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 { font-weight: 700; line-height: 1.2; color: var(--c-heading); letter-spacing: -0.02em; }
+p { line-height: 1.6; }
+a { color: inherit; text-decoration: none; }
+
+/* ── Form & control base ───────────────────────────────────────────────────── */
+button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+button { cursor: pointer; }
+
+/* Accessible focus rings — keyboard only, app-wide */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--sh-focus);
+  border-radius: 6px;
+}
+input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { box-shadow: 0 0 0 3px rgba(37,99,235,0.25); }
+
+::selection { background: rgba(37, 99, 235, 0.18); color: var(--c-heading); }
+
+/* ── Premium scrollbars ────────────────────────────────────────────────────── */
+::-webkit-scrollbar          { width: 10px; height: 10px; }
+::-webkit-scrollbar-track    { background: transparent; }
+::-webkit-scrollbar-thumb    { background: #cbd5e1; border-radius: var(--r-pill); border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: content-box; }
+* { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+
+/* ── Shared motion library ─────────────────────────────────────────────────── */
+@keyframes wt-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes wt-fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes wt-scale-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+@keyframes wt-slide-in-right { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes wt-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes wt-spin { to { transform: rotate(360deg); } }
+@keyframes wt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes wt-shake { 10%, 90% { transform: translateX(-1px); } 20%, 80% { transform: translateX(2px); } 30%, 50%, 70% { transform: translateX(-4px); } 40%, 60% { transform: translateX(4px); } }
+
+/* Page-content entrance — applied by the shell wrapper */
+.wt-page-enter { animation: wt-fade-up 0.35s var(--ease-out) both; }
+
+/* Skeleton utility usable app-wide */
+.wt-skeleton {
+  background: linear-gradient(90deg, #eef2f6 25%, #e2e8f0 50%, #eef2f6 75%);
+  background-size: 200% 100%;
+  animation: wt-shimmer 1.4s infinite;
+  border-radius: var(--r-sm);
+}
+
+/* ── Reduced motion ────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

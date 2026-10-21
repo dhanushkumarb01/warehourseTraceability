@@ -1,0 +1,265 @@
+.page {
+  padding: 32px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.pageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.pageHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.backBtn {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.backBtn:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.backBtn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.pageTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px;
+}
+
+.pageBreadcrumb {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin: 0;
+}
+
+.primaryBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+  box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.1);
+}
+
+.primaryBtn:hover {
+  background: #1d4ed8;
+}
+
+.primaryBtn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.infoCard {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 32px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+}
+
+.infoGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+}
+
+.infoField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.infoLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.infoValue {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.contentCard {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+
+.cardHeader {
+  padding: 16px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cardHeader h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #0f172a;
+}
+
+.tableWrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.table th {
+  background: #f8fafc;
+  padding: 14px 24px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 16px 24px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.875rem;
+  color: #334155;
+  vertical-align: middle;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.table tr:hover {
+  background: #f8fafc;
+}
+
+.code {
+  font-family: ui-monospace, Consolas, monospace;
+  background: #f1f5f9;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.actionBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.actionBtn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.viewBtn   { background: #eff6ff; color: #2563eb; }
+.editBtn   { background: #fff7ed; color: #ea580c; }
+.deleteBtn { background: #fef2f2; color: #dc2626; }
+
+.viewBtn:hover   { background: #dbeafe; }
+.editBtn:hover   { background: #ffedd5; }
+.deleteBtn:hover { background: #fee2e2; }
+
+.emptyState {
+  padding: 64px 24px;
+  text-align: center;
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.emptyState svg {
+  width: 48px;
+  height: 48px;
+  color: #cbd5e1;
+  margin-bottom: 16px;
+}
+
+.qrIconAvailable {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #16a34a;
+  background: #dcfce7;
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.qrIconAvailable svg {
+  width: 16px;
+  height: 16px;
+}
+
+.qrIconMissing {
+  color: #cbd5e1;
+  font-weight: 700;
+}
+/* ── Enterprise design-system polish (Phase 9 UI uplift) ──────────────────── */
+.pageIcon { box-shadow: var(--sh-md); }
+.pageTitle { letter-spacing: -0.025em; }
+.statsStrip > * { animation: wt-fade-up 0.45s var(--ease-out) both; }
+.statsStrip > *:nth-child(2) { animation-delay: 0.06s; }
+.statsStrip > *:nth-child(3) { animation-delay: 0.12s; }
+.statsStrip > *:nth-child(4) { animation-delay: 0.18s; }
+.statsStrip > *:nth-child(5) { animation-delay: 0.24s; }
+.statCard { border-radius: var(--r-lg); box-shadow: var(--sh-sm); transition: transform var(--t-fast), box-shadow var(--t-fast); }
+.statCard:hover { transform: translateY(-2px); box-shadow: var(--sh-md); }
+.statValue { letter-spacing: -0.02em; }
+.card { box-shadow: var(--sh-sm); transition: box-shadow var(--t-med); }
+.card:hover { box-shadow: var(--sh-md); }
+.table tbody tr { transition: background var(--t-fast); }

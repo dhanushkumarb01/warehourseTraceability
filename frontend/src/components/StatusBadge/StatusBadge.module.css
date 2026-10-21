@@ -1,0 +1,123 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.available {
+  background: #dcfce7;
+  color: #15803d;
+}
+.available .dot {
+  background: #16a34a;
+}
+
+.occupied {
+  background: #fef9c3;
+  color: #a16207;
+}
+.occupied .dot {
+  background: #ca8a04;
+}
+
+.inactive {
+  background: #f1f5f9;
+  color: #64748b;
+}
+.inactive .dot {
+  background: #94a3b8;
+}
+
+.active {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.active .dot {
+  background: #3b82f6;
+}
+
+.mapped {
+  background: #f3e8ff;
+  color: #7e22ce;
+}
+.mapped .dot {
+  background: #9333ea;
+}
+
+.dispatched {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.dispatched .dot {
+  background: #ef4444;
+}
+
+/* ── Dispatch lifecycle ───────────────────────────────────────────────────── */
+.pending   { background: #fef9c3; color: #a16207; }
+.pending .dot   { background: #ca8a04; }
+
+.approved  { background: #dbeafe; color: #1e40af; }
+.approved .dot  { background: #3b82f6; }
+
+.rejected  { background: #fee2e2; color: #b91c1c; }
+.rejected .dot  { background: #ef4444; }
+
+.completed { background: #dcfce7; color: #15803d; }
+.completed .dot { background: #16a34a; }
+
+.cancelled { background: #f1f5f9; color: #64748b; }
+.cancelled .dot { background: #94a3b8; }
+
+/* ── Gate validation lifecycle ────────────────────────────────────────────── */
+.validated { background: #dbeafe; color: #1e40af; }
+.validated .dot { background: #3b82f6; }
+
+.denied    { background: #fee2e2; color: #b91c1c; }
+.denied .dot    { background: #ef4444; }
+
+.exited    { background: #ede9fe; color: #6d28d9; }
+.exited .dot    { background: #8b5cf6; }
+
+/* ── Surveillance — camera status + health ─────────────────────────────────── */
+.maintenance { background: #fef3c7; color: #b45309; }
+.maintenance .dot { background: #d97706; }
+
+.online { background: #dcfce7; color: #15803d; }
+.online .dot { background: #16a34a; }
+
+.offline { background: #fee2e2; color: #b91c1c; }
+.offline .dot { background: #ef4444; }
+
+.unknown { background: #f1f5f9; color: #64748b; }
+.unknown .dot { background: #94a3b8; }
+
+/* ── Surveillance — alert lifecycle + severity ─────────────────────────────── */
+.alertNew     { background: #fee2e2; color: #b91c1c; }
+.alertNew .dot     { background: #ef4444; }
+.acknowledged { background: #dbeafe; color: #1d4ed8; }
+.acknowledged .dot { background: #2563eb; }
+.resolved     { background: #dcfce7; color: #15803d; }
+.resolved .dot     { background: #16a34a; }
+.dismissed    { background: #f1f5f9; color: #64748b; }
+.dismissed .dot    { background: #94a3b8; }
+
+.sevLow       { background: #ecfeff; color: #0e7490; }
+.sevLow .dot       { background: #06b6d4; }
+.sevMedium    { background: #fef3c7; color: #b45309; }
+.sevMedium .dot    { background: #d97706; }
+.sevHigh      { background: #ffedd5; color: #c2410c; }
+.sevHigh .dot      { background: #ea580c; }
+.sevCritical  { background: #fee2e2; color: #991b1b; }
+.sevCritical .dot  { background: #dc2626; }

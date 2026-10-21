@@ -1,0 +1,4 @@
+/* App.css — intentionally empty.
+ * All application styles are handled via CSS Modules in each component.
+ * This file is kept to avoid import errors from legacy code, but contains no rules.
+ */
