@@ -33,7 +33,7 @@ const env = require('./env');
  */
 const ALLOWED_ORIGINS = env.FRONTEND_URL
   .split(',')
-  .map((o) => o.trim())
+  .map((o) => o.trim().replace(/\/+$/, ''))
   .filter(Boolean);
 
 const corsConfig = {

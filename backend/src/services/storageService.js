@@ -8,17 +8,19 @@
 const fs = require('fs');
 const path = require('path');
 const { promisify } = require('util');
+const env = require('../config/env');
 
 const mkdirAsync = promisify(fs.mkdir);
 const writeFileAsync = promisify(fs.writeFile);
 const unlinkAsync = promisify(fs.unlink);
 
 const STORAGE_ROOT = path.join(__dirname, '../../storage');
-const QR_DIR = path.join(STORAGE_ROOT, 'qrcodes');
 
-// Ensure directories exist synchronously on startup
-if (!fs.existsSync(STORAGE_ROOT)) fs.mkdirSync(STORAGE_ROOT);
-if (!fs.existsSync(QR_DIR)) fs.mkdirSync(QR_DIR);
+// Ensure directories exist synchronously on startup. Hosts with ephemeral
+// disks (e.g. Render free tier) start with no storage/ folder at all.
+for (const dir of [env.VIDEO_UPLOAD_DIR, env.STREAM_HLS_DIR, env.SURVEILLANCE_SNAPSHOT_DIR]) {
+  fs.mkdirSync(path.join(STORAGE_ROOT, dir), { recursive: true });
+}
 
 /**
  * Save a buffer to the specified directory

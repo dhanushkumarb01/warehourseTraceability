@@ -1,0 +1,35 @@
+# Render Blueprint — backend API only (frontend is on Vercel; ai-service is not deployed).
+# Secrets use `sync: false`: Render prompts for their values when the Blueprint is applied.
+services:
+  - type: web
+    name: warehouse-traceability-api
+    runtime: node
+    plan: free
+    region: ohio # closest to the Neon DB in us-east-2
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: SAP_MODE
+        value: mock
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CAMERA_ENC_KEY
+        sync: false
+      - key: AI_SERVICE_TOKEN
+        sync: false
+      - key: BOOTSTRAP_ADMIN_USERNAME
+        value: admin
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        value: admin@example.com
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false

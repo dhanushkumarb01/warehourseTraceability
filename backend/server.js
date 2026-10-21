@@ -16,8 +16,9 @@ const env = require('./src/config/env');
 const streamHealthService = require('./src/services/streamHealthService');
 const streamSessionManager = require('./src/services/streamSessionManager');
 
-const server = app.listen(env.PORT, () => {
-  console.log(`[SERVER] Warehouse Traceability API  →  http://localhost:${env.PORT}`);
+// Bind all interfaces so container hosts (Render, Docker) can route traffic in.
+const server = app.listen(env.PORT, '0.0.0.0', () => {
+  console.log(`[SERVER] Warehouse Traceability API  →  http://0.0.0.0:${env.PORT}`);
   console.log(`[SERVER] Environment : ${env.NODE_ENV}`);
   console.log(`[SERVER] CORS origin : ${env.FRONTEND_URL}`);
   // Start background stream-health reconciliation (import-safe: only here, not

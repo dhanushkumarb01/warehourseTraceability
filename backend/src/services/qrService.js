@@ -9,7 +9,6 @@
 const QRCode = require('qrcode');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const storageService = require('./storageService');
 const AppError = require('../utils/AppError');
 
 /**
@@ -38,11 +37,21 @@ const generatePayload = (entityType, entityData, version = 1) => {
 };
 
 /**
- * Determine the deterministic filename for an entity's QR code.
+ * Render a QR payload to a print-quality PNG buffer.
+ *
+ * Images are rendered on request from the payload stored in the DB rather than
+ * persisted to disk, so QR codes survive hosts with ephemeral filesystems.
  */
-const getFileName = (entityType, entityId) => {
-  return `qr_${entityType.toLowerCase()}_${entityId}.png`;
-};
+const renderPng = (payloadStr) => QRCode.toBuffer(payloadStr, {
+  errorCorrectionLevel: 'H',
+  type: 'png',
+  margin: 2,
+  width: 600, // High quality for printing
+  color: {
+    dark: '#0f172a',
+    light: '#ffffff'
+  }
+});
 
 /**
  * Generate or Regenerate a QR Code for a Bay
@@ -61,21 +70,8 @@ const generateBayQR = async (bayId, isRegenerate = false) => {
   const newVersion = (bay.qrVersion || 0) + 1;
   const payloadStr = generatePayload('BAY', bay, newVersion);
 
-  // Generate PNG buffer using industry-standard qrcode library
-  const qrBuffer = await QRCode.toBuffer(payloadStr, {
-    errorCorrectionLevel: 'H',
-    type: 'png',
-    margin: 2,
-    width: 600, // High quality for printing
-    color: {
-      dark: '#0f172a',
-      light: '#ffffff'
-    }
-  });
-
-  // Save to storage
-  const filename = getFileName('BAY', bay.id);
-  await storageService.saveFile(filename, qrBuffer, 'qrcodes');
+  // Validate the payload renders before marking the QR as generated.
+  await renderPng(payloadStr);
 
   // Update DB
   const updatedBay = await prisma.bay.update({
@@ -108,21 +104,8 @@ const generateMaterialLotQR = async (lotId, isRegenerate = false) => {
   const newVersion = (lot.qrVersion || 0) + 1;
   const payloadStr = generatePayload('MATERIAL_LOT', lot, newVersion);
 
-  // Generate PNG buffer using industry-standard qrcode library
-  const qrBuffer = await QRCode.toBuffer(payloadStr, {
-    errorCorrectionLevel: 'H',
-    type: 'png',
-    margin: 2,
-    width: 600, // High quality for printing
-    color: {
-      dark: '#0f172a',
-      light: '#ffffff'
-    }
-  });
-
-  // Save to storage
-  const filename = getFileName('MATERIAL_LOT', lot.id);
-  await storageService.saveFile(filename, qrBuffer, 'qrcodes');
+  // Validate the payload renders before marking the QR as generated.
+  await renderPng(payloadStr);
 
   // Update DB
   const updatedLot = await prisma.materialLot.update({
@@ -170,17 +153,28 @@ const getQRStatus = async (entityType, entityId) => {
 };
 
 /**
- * Get absolute file path to a generated QR code PNG.
+ * Render the PNG for an entity's generated QR code from its stored payload.
+ * @returns {Promise<Buffer>}
  */
-const getQRFilePath = (entityType, entityId) => {
-  const filename = getFileName(entityType, entityId);
-  const fileRef = `qrcodes/${filename}`;
-  return storageService.getFilePath(fileRef);
+const getQRImageBuffer = async (entityType, entityId) => {
+  let entity;
+  if (entityType === 'BAY') {
+    entity = await prisma.bay.findUnique({ where: { id: entityId } });
+  } else if (entityType === 'MATERIAL_LOT') {
+    entity = await prisma.materialLot.findUnique({ where: { id: entityId } });
+  } else {
+    throw new AppError(`Unsupported entity type: ${entityType}`, 400);
+  }
+  if (!entity) throw new AppError('Entity not found.', 404);
+  if (entity.qrStatus !== 'GENERATED' || !entity.qrCode) {
+    throw new AppError('QR Code has not been generated for this entity yet.', 404);
+  }
+  return renderPng(entity.qrCode);
 };
 
 module.exports = {
   generateBayQR,
   generateMaterialLotQR,
   getQRStatus,
-  getQRFilePath,
+  getQRImageBuffer,
 };

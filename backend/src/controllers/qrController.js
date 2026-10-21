@@ -8,7 +8,6 @@
 const qrService = require('../services/qrService');
 const { sendSuccess } = require('../utils/responseHelper');
 const AppError = require('../utils/AppError');
-const fs = require('fs');
 
 /**
  * POST /api/qr/:entityType/:entityId/generate
@@ -40,59 +39,29 @@ const getStatus = async (req, res, next) => {
 
 /**
  * GET /api/qr/:entityType/:entityId/download
- * Sends the actual PNG file
+ * Sends the PNG as an attachment (rendered on request from the stored payload)
  */
 const downloadQR = async (req, res, next) => {
   const { entityType, entityId } = req.params;
   const upperType = entityType.toUpperCase();
 
-  // First verify entity exists and status
-  const statusInfo = await qrService.getQRStatus(upperType, entityId);
-  
-  if (statusInfo.qrStatus !== 'GENERATED') {
-    throw new AppError('QR Code has not been generated for this entity yet.', 404);
-  }
+  const png = await qrService.getQRImageBuffer(upperType, entityId);
 
-  const filePath = qrService.getQRFilePath(upperType, entityId);
-
-  if (!fs.existsSync(filePath)) {
-    throw new AppError('QR Code file is missing from storage.', 500);
-  }
-
-  res.download(filePath, `QR_${upperType}_${entityId}.png`, (err) => {
-    if (err) {
-      if (err.code === 'ECONNABORTED' && res.headersSent) {
-        // Ignored, client disconnected
-      } else {
-        next(err);
-      }
-    }
-  });
+  res.attachment(`QR_${upperType}_${entityId}.png`);
+  res.type('png').send(png);
 };
 
 /**
  * GET /api/qr/:entityType/:entityId/image
- * Sends the actual PNG file inline for UI preview
+ * Sends the PNG inline for UI preview
  */
 const getQRImage = async (req, res, next) => {
   const { entityType, entityId } = req.params;
   const upperType = entityType.toUpperCase();
 
-  const statusInfo = await qrService.getQRStatus(upperType, entityId);
-  
-  if (statusInfo.qrStatus !== 'GENERATED') {
-    throw new AppError('QR Code has not been generated for this entity yet.', 404);
-  }
+  const png = await qrService.getQRImageBuffer(upperType, entityId);
 
-  const filePath = qrService.getQRFilePath(upperType, entityId);
-
-  if (!fs.existsSync(filePath)) {
-    throw new AppError('QR Code file is missing from storage.', 500);
-  }
-
-  res.sendFile(filePath, (err) => {
-    if (err && err.code !== 'ECONNABORTED') next(err);
-  });
+  res.type('png').send(png);
 };
 
 module.exports = {

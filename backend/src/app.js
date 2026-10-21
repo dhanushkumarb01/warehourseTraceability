@@ -73,7 +73,8 @@ app.use(express.urlencoded({ extended: false }));
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 
-app.get('/api/health', (req, res) => {
+// Also exposed at /health for platform health checks (Render).
+app.get(['/health', '/api/health'], (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Warehouse Traceability API is running.',
