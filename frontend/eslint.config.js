@@ -17,5 +17,16 @@ export default defineConfig([
       globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    rules: {
+      // eslint-plugin-react-hooks v7 flags the fetch-on-mount pattern
+      // (useEffect(() => { load(); }, [load])) used across every page.
+      // It is a render-performance suggestion, not a defect, so it is off.
+      'react-hooks/set-state-in-effect': 'off',
+    },
+  },
+  {
+    // The auth context intentionally exports the provider and its hook together.
+    files: ['src/context/**/*.{js,jsx}'],
+    rules: { 'react-refresh/only-export-components': 'off' },
   },
 ])
