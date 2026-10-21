@@ -42,3 +42,6 @@ desktop.ini
 
 # Vercel CLI project link
 .vercel/
+
+# AI worker local cache (downloaded demo videos)
+ai-service/.cache/

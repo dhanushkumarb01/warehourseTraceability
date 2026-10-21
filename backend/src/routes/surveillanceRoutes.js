@@ -17,6 +17,7 @@
  *
  * Internal (AI worker, X-Service-Token):
  *   GET    /ai/cameras                   Camera jobs (capture + config)
+ *   GET    /ai/cameras/:id/video         Download a camera's uploaded demo video
  *   POST   /ai/alerts                    Ingest a detected alert (+ snapshot)
  *   POST   /ai/heartbeat                 Liveness + live per-camera motion state
  *
@@ -50,6 +51,7 @@ router.get('/alerts/:id/snapshot', streamAuthenticate, validateAlertId, handleVa
 // ── Internal AI-worker endpoints (service token; own JSON parser for snapshots)
 const ingestParser = express.json({ limit: env.SURVEILLANCE_INGEST_LIMIT });
 router.get('/ai/cameras', authenticateService, surveillanceController.workerCameras);
+router.get('/ai/cameras/:id/video', authenticateService, surveillanceController.workerVideo);
 router.get('/ai/faces', authenticateService, surveillanceController.workerFaces);
 router.post('/ai/alerts', authenticateService, ingestParser, validateIngest, handleValidationErrors, surveillanceController.ingest);
 router.post('/ai/heartbeat', authenticateService, ingestParser, validateHeartbeat, handleValidationErrors, surveillanceController.heartbeat);

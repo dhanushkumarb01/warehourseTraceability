@@ -297,6 +297,19 @@ const resolveSnapshot = async (id) => {
   return abs;
 };
 
+/**
+ * Absolute path of a camera's uploaded demo video, for the AI worker. Lets a
+ * worker on another machine fetch the clip instead of opening a server path.
+ */
+const resolveWorkerVideo = async (cameraId) => {
+  const cam = await prisma.camera.findUnique({ where: { id: cameraId }, select: { videoFilePath: true } }).catch(() => null);
+  if (!cam) throw new AppError(`Camera "${cameraId}" was not found.`, 404);
+  if (!cam.videoFilePath) throw new AppError('This camera has no demo video.', 404);
+  const abs = storageService.getFilePath(cam.videoFilePath);
+  if (!fs.existsSync(abs)) throw new AppError('Video file is missing from storage.', 404);
+  return abs;
+};
+
 // ─── Ingest (AI worker → backend) ─────────────────────────────────────────────
 /**
  * Persist an alert reported by the AI service. Applies cooldown de-duplication
@@ -599,7 +612,13 @@ const buildCapture = (cam) => {
   switch (cam.streamType) {
     case 'UPLOADED_VIDEO':
       return cam.videoFilePath
-        ? { kind: 'file', path: storageService.getFilePath(cam.videoFilePath), loop: true }
+        ? {
+          kind: 'file',
+          path: storageService.getFilePath(cam.videoFilePath),
+          // Download route for workers that don't share the backend's disk.
+          videoUrl: `/api/surveillance/ai/cameras/${cam.id}/video`,
+          loop: true,
+        }
         : { kind: 'none', reason: 'No demo video associated.' };
     case 'LOCAL_WEBCAM':
       return { kind: 'webcam', index: Number((cam.aiConfig && cam.aiConfig.webcamIndex) ?? 0) };
@@ -625,7 +644,7 @@ const buildCapture = (cam) => {
 module.exports = {
   // dashboard / user-facing
   listAlerts, getAlert, getSummary, getRecentForCamera,
-  acknowledgeAlert, resolveAlert, dismissAlert, resolveSnapshot,
+  acknowledgeAlert, resolveAlert, dismissAlert, resolveSnapshot, resolveWorkerVideo,
   getCameraMotionConfig, setCameraMotionConfig,
   getCameraWallConfig, setCameraWallConfig,
   getCameraWagonConfig, setCameraWagonConfig,

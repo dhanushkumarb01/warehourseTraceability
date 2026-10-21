@@ -150,6 +150,11 @@ const workerCameras = async (req, res) => {
   sendSuccess(res, 200, 'Camera jobs retrieved.', data);
 };
 
+const workerVideo = async (req, res) => {
+  const abs = await surveillanceService.resolveWorkerVideo(req.params.id);
+  res.sendFile(abs);
+};
+
 const workerFaces = async (req, res) => {
   const data = await surveillanceService.listFacesForWorker();
   sendSuccess(res, 200, 'Face gallery retrieved.', data);
@@ -161,5 +166,5 @@ module.exports = {
   getWallConfig, setWallConfig, getWagonConfig, setWagonConfig,
   getOverSpeedConfig, setOverSpeedConfig, getCancelledConfig, setCancelledConfig,
   getFaceConfig, setFaceConfig, getZones, setZones, serviceStatus,
-  ingest, heartbeat, workerCameras, workerFaces,
+  ingest, heartbeat, workerCameras, workerVideo, workerFaces,
 };

@@ -14,14 +14,47 @@ whole AI platform builds on.
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Optional
 
 import cv2
+import requests
 
+from config import CONFIG
 from utils.logger import get_logger
 
 log = get_logger("video")
+
+# Local copies of uploaded demo videos, for when the backend runs on another
+# machine (e.g. a cloud host) and its storage path is not readable here.
+VIDEO_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".cache", "videos")
+
+
+def _fetch_video(path: str, video_url: str) -> Optional[str]:
+    """Download a camera's demo video from the backend once; return the local path."""
+    local = os.path.join(VIDEO_CACHE_DIR, os.path.basename(path.replace("\\", "/")))
+    if os.path.exists(local):
+        return local
+    os.makedirs(VIDEO_CACHE_DIR, exist_ok=True)
+    tmp = local + ".part"
+    try:
+        with requests.get(f"{CONFIG.api_url}{video_url}", headers={"X-Service-Token": CONFIG.service_token},
+                          stream=True, timeout=CONFIG.http_timeout_sec) as resp:
+            resp.raise_for_status()
+            with open(tmp, "wb") as fh:
+                for chunk in resp.iter_content(chunk_size=1 << 20):
+                    fh.write(chunk)
+        os.replace(tmp, local)
+        log.info("Downloaded demo video %s", os.path.basename(local))
+        return local
+    except (requests.RequestException, OSError) as exc:
+        log.warning("Could not download demo video from backend: %s", exc)
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return None
 
 
 class VideoSource:
@@ -40,7 +73,11 @@ class VideoSource:
     def _target(self):
         kind = self._kind
         if kind == "file":
-            return self._capture.get("path")
+            path = self._capture.get("path")
+            video_url = self._capture.get("videoUrl")
+            if path and not os.path.exists(path) and video_url:
+                return _fetch_video(path, video_url)
+            return path
         if kind == "stream":
             return self._capture.get("url")
         if kind == "webcam":
