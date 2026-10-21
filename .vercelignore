@@ -1,0 +1,4 @@
+# Only frontend/ is deployed to Vercel
+ai-service/
+backend/
+docs/

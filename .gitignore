@@ -39,3 +39,6 @@ desktop.ini
 .idea/
 .vscode/
 *.swp
+
+# Vercel CLI project link
+.vercel/
