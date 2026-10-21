@@ -1,0 +1,753 @@
+generator client {
+  provider      = "prisma-client-js"
+  // "native" keeps the local dev machine (e.g. Windows) working.
+  // The additional Linux targets allow the same client to run in
+  // containerised CI / staging / production deployments without
+  // regenerating. Safe to extend — never remove "native".
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  SUPERVISOR
+  OPERATOR
+  MANAGER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum BayStatus {
+  AVAILABLE
+  OCCUPIED
+  INACTIVE
+}
+
+enum MaterialStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LotStatus {
+  AVAILABLE
+  MAPPED
+  DISPATCHED
+}
+
+enum MappingStatus {
+  ACTIVE      // Lot is currently physically present in the bay
+  MOVED       // Closed automatically because the lot was relocated to another bay
+  UNMAPPED    // Closed explicitly because the lot was removed from the bay
+  DISPATCHED  // Closed because the lot physically left the warehouse via a gate exit
+}
+
+enum DispatchStatus {
+  PENDING     // Request created, awaiting supervisor decision
+  APPROVED    // Approved and ready for gate validation / exit
+  REJECTED    // Supervisor rejected the request
+  COMPLETED   // Material has physically exited via a validated gate
+  CANCELLED   // Request withdrawn before exit
+}
+
+enum GateValidationStatus {
+  PENDING     // Validation record opened, decision not yet finalised
+  VALIDATED   // Checks passed; exit authorised
+  DENIED      // Checks failed; exit refused
+  EXITED      // Material has physically left the warehouse
+}
+
+enum QRStatus {
+  UNGENERATED
+  GENERATED
+}
+
+// ─── SAP Integration (Phase 8) ──────────────────────────────────────────────
+
+enum SAPSyncType {
+  MATERIAL
+  INVENTORY
+  DISPATCH
+  STATUS
+}
+
+enum SAPSyncStatus {
+  PENDING     // Queued, not yet attempted
+  IN_PROGRESS // Attempt in flight
+  SUCCESS     // Synced successfully
+  FAILED      // Failed after exhausting retries — payload retained for manual retry
+}
+
+enum SAPValidationType {
+  MATERIAL
+  LOT
+  INVENTORY
+  DISPATCH_APPROVAL
+  GATE_EXIT
+}
+
+enum SAPValidationStatus {
+  VALIDATED   // All SAP checks passed
+  WARNING     // Non-blocking issues (e.g. SAP unreachable) — operation allowed
+  BLOCKED     // SAP check failed — operation must be blocked
+}
+
+
+model User {
+  id          String      @id @default(uuid())
+  username    String      @unique
+  email       String      @unique
+  password    String
+  role        UserRole
+  status      UserStatus  @default(ACTIVE)
+
+  // Timestamp of the user's most recent successful login (null until first login).
+  lastLogin   DateTime?
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  mappings            MaterialBayMapping[]
+  requestedDispatches Dispatch[]       @relation("DispatchRequestedBy")
+  approvedDispatches  Dispatch[]       @relation("DispatchApprovedBy")
+  gateValidations     GateValidation[]
+  auditLogs           AuditLog[]
+}
+
+model Bay {
+  id          String      @id @default(uuid())
+  bayCode     String      @unique
+  bayName     String
+  zone        String
+
+  // Reference center point — maintained for backward compat and map centering
+  latitude    Float
+  longitude   Float
+
+  // Physical bay boundary stored as an ordered array of [lat, lng] coordinate pairs.
+  // Format: [[lat1, lng1], [lat2, lng2], ...] — supports 3+ corners (rectangles, polygons).
+  // Null when boundary data has not yet been defined for a bay.
+  polygonCoordinates  Json?
+
+  // QR Management
+  qrCode        String?     @unique
+  qrStatus      QRStatus    @default(UNGENERATED)
+  qrGeneratedAt DateTime?
+  qrVersion     Int         @default(0)
+
+  status      BayStatus   @default(AVAILABLE)
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  mappings        MaterialBayMapping[]
+  dispatches      Dispatch[]
+  gateValidations GateValidation[]
+}
+
+model Material {
+  id            String       @id @default(uuid())
+  materialCode  String       @unique
+  materialName  String
+  materialType  String
+
+  manufacturer  String?
+  supplier      String?
+  description   String?
+
+  status        MaterialStatus @default(ACTIVE)
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  lots          MaterialLot[]
+}
+
+model MaterialLot {
+  id            String        @id @default(uuid())
+
+  lotCode       String        @unique
+
+  materialId    String
+  material      Material      @relation(fields: [materialId], references: [id])
+
+  quantity      Float
+  unit          String
+
+  // QR Management
+  qrCode        String?       @unique
+  qrStatus      QRStatus      @default(UNGENERATED)
+  qrGeneratedAt DateTime?
+  qrVersion     Int           @default(0)
+
+  status        LotStatus     @default(AVAILABLE)
+
+  receivedDate  DateTime
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  mappings        MaterialBayMapping[]
+  dispatches      Dispatch[]
+  gateValidations GateValidation[]
+}
+
+model MaterialBayMapping {
+  id            String        @id @default(uuid())
+
+  lotId         String
+  bayId         String
+  mappedBy      String
+
+  lot           MaterialLot   @relation(fields: [lotId], references: [id])
+  bay           Bay           @relation(fields: [bayId], references: [id])
+  user          User          @relation(fields: [mappedBy], references: [id])
+
+  mappedAt      DateTime      @default(now())
+
+  // Set when the mapping is closed (status transitions to MOVED or UNMAPPED).
+  // Null while the mapping is ACTIVE. Preserves the full movement timeline.
+  unmappedAt    DateTime?
+
+  status        MappingStatus @default(ACTIVE)
+
+  remarks       String?
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Query accelerators for the inventory / history / location lookups.
+  @@index([lotId])
+  @@index([bayId])
+  @@index([status])
+  @@index([bayId, status])
+}
+
+model Dispatch {
+  id                String           @id @default(uuid())
+
+  // Human-readable, unique business identifier (e.g. DSP-20260611-0001).
+  dispatchNumber    String           @unique
+
+  lotId             String
+  // Bay the lot is being dispatched FROM — captured from the active mapping at
+  // request time so the gate can verify origin even if mappings change later.
+  bayId             String
+
+  requestedQuantity Float
+  approvedQuantity  Float?
+
+  requestedBy       String
+  approvedBy        String?
+
+  dispatchStatus    DispatchStatus   @default(PENDING)
+
+  vehicleNumber     String?
+  remarks           String?
+
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  approvedAt        DateTime?
+  completedAt       DateTime?
+
+  lot             MaterialLot      @relation(fields: [lotId], references: [id])
+  bay             Bay              @relation(fields: [bayId], references: [id])
+  requester       User             @relation("DispatchRequestedBy", fields: [requestedBy], references: [id])
+  approver        User?            @relation("DispatchApprovedBy", fields: [approvedBy], references: [id])
+
+  gateValidations GateValidation[]
+
+  @@index([lotId])
+  @@index([bayId])
+  @@index([dispatchStatus])
+}
+
+model GateValidation {
+  id               String               @id @default(uuid())
+
+  dispatchId       String
+  lotId            String
+  bayId            String
+
+  validatedBy      String?
+
+  validationStatus GateValidationStatus @default(PENDING)
+
+  gateExitTime     DateTime?
+
+  remarks          String?
+
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  dispatch  Dispatch    @relation(fields: [dispatchId], references: [id])
+  lot       MaterialLot @relation(fields: [lotId], references: [id])
+  bay       Bay         @relation(fields: [bayId], references: [id])
+  validator User?       @relation(fields: [validatedBy], references: [id])
+
+  @@index([dispatchId])
+  @@index([lotId])
+  @@index([validationStatus])
+}
+
+model AuditLog {
+  id          String      @id @default(uuid())
+
+  userId      String
+
+  user        User        @relation(fields: [userId], references: [id])
+
+  action      String
+  module      String
+
+  entityId    String
+
+  remarks     String?
+
+  timestamp   DateTime    @default(now())
+}
+
+// ─── SAP Integration logs (Phase 8) ─────────────────────────────────────────
+
+/// Records every synchronization attempt with SAP. The request/response
+/// payloads are retained so a FAILED sync can be retried without losing data,
+/// and so admins have full visibility into the integration.
+model SAPSyncLog {
+  id              String        @id @default(uuid())
+
+  entityType      SAPSyncType
+  entityId        String        // Warehouse entity id (material/lot/dispatch)
+  syncType        SAPSyncType   // Logical operation (kept distinct for clarity)
+
+  status          SAPSyncStatus @default(PENDING)
+
+  requestPayload  Json?
+  responsePayload Json?
+  errorMessage    String?
+
+  attemptCount    Int           @default(0)
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([entityType])
+  @@index([status])
+  @@index([entityId])
+}
+
+/// Records every SAP validation performed (dispatch approval, gate exit, etc.)
+/// for traceability and audit compliance.
+model SAPValidationLog {
+  id              String              @id @default(uuid())
+
+  entityType      SAPValidationType
+  entityId        String
+
+  validationType  SAPValidationType
+
+  status          SAPValidationStatus
+
+  message         String?
+  details         Json?
+
+  createdAt       DateTime            @default(now())
+
+  @@index([entityType])
+  @@index([status])
+  @@index([entityId])
+}
+
+// ─── Truck Traceability + RFID Lifecycle (Phase 10) ─────────────────────────
+// Additive module. Existing models are NOT modified; the link to a Dispatch is
+// a soft reference (TruckVisit.dispatchId) resolved in the service layer, so
+// dispatch / gate / SAP logic is reused, never duplicated or disturbed.
+
+enum TruckStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum VisitStatus {
+  ACTIVE    // Truck is currently inside the yard
+  PARKED    // Parked after invoice, still on premises
+  EXITED    // Left the yard — lifecycle complete
+}
+
+/// Canonical yard checkpoints. The order here defines the expected sequence and
+/// powers the sequence-violation rule. Which physical RFID reader sits at each
+/// stage is configurable data (RFIDReader.stage), never hardcoded.
+enum TruckStage {
+  ENTRY_GATE
+  WEIGH_BRIDGE_1
+  LOADING_DOCK
+  WEIGH_BRIDGE_2
+  INVOICE
+  PARKING
+  EXIT_GATE
+}
+
+enum TruckAlertType {
+  DELAY
+  SEQUENCE_VIOLATION
+  UNAUTHORIZED_REENTRY
+}
+
+enum RFIDReaderStatus {
+  ONLINE
+  OFFLINE
+  MAINTENANCE
+}
+
+/// Reusable truck master — persists across many yard visits.
+model Truck {
+  id            String       @id @default(uuid())
+  truckNumber   String       @unique
+  driverName    String
+  driverContact String?
+  transporter   String?
+  vehicleType   String?
+  rfidTag       String?      @unique
+  status        TruckStatus  @default(ACTIVE)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  visits        TruckVisit[]
+
+  @@index([status])
+}
+
+/// One yard lifecycle for a truck (entry → … → exit).
+model TruckVisit {
+  id           String       @id @default(uuid())
+  visitNumber  String       @unique
+  truckId      String
+  truck        Truck        @relation(fields: [truckId], references: [id])
+
+  status       VisitStatus  @default(ACTIVE)
+  currentStage TruckStage?
+
+  // Persisted risk flag for fast dashboard filtering: NORMAL | DELAYED | FLAGGED.
+  riskStatus   String       @default("NORMAL")
+
+  invoiceAt    DateTime?    // when the INVOICE stage was reached (drives re-entry rule)
+  entryTime    DateTime     @default(now())
+  exitTime     DateTime?
+
+  // Soft reference to Dispatch (no FK — existing model untouched). Auto-linked
+  // at the INVOICE stage by matching the truck number to a dispatch vehicle.
+  dispatchId   String?
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  events       TruckEvent[]
+  alerts       TruckAlert[]
+
+  @@index([truckId])
+  @@index([status])
+  @@index([currentStage])
+  @@index([dispatchId])
+}
+
+/// Immutable, append-only RFID lifecycle event. History is never overwritten.
+model TruckEvent {
+  id        String      @id @default(uuid())
+  visitId   String
+  visit     TruckVisit  @relation(fields: [visitId], references: [id])
+  truckId   String
+
+  stage     TruckStage
+  readerId  String?
+  reader    RFIDReader? @relation(fields: [readerId], references: [id])
+
+  source    String      @default("SIMULATED") // SIMULATED | RFID | MANUAL
+  rawTag    String?
+
+  eventTime DateTime    @default(now())
+  createdAt DateTime    @default(now())
+
+  @@index([visitId])
+  @@index([truckId])
+  @@index([stage])
+}
+
+/// A business-rule violation or delay raised against a visit.
+model TruckAlert {
+  id        String         @id @default(uuid())
+  visitId   String
+  visit     TruckVisit     @relation(fields: [visitId], references: [id])
+  truckId   String
+
+  alertType TruckAlertType
+  stage     TruckStage?
+  message   String
+  resolved  Boolean        @default(false)
+
+  createdAt DateTime       @default(now())
+
+  @@index([visitId])
+  @@index([alertType])
+  @@index([resolved])
+}
+
+/// RFID reader registry. One reader per physical checkpoint; stage is
+/// configurable so the same event pipeline serves any yard layout.
+model RFIDReader {
+  id            String           @id @default(uuid())
+  readerCode    String           @unique
+  readerName    String
+  readerType    String           @default("FIXED")
+  stage         TruckStage
+  ipAddress     String?
+  location      String?
+  status        RFIDReaderStatus @default(OFFLINE)
+  lastHeartbeat DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  events        TruckEvent[]
+
+  @@index([stage])
+  @@index([status])
+}
+
+// ─── AI Surveillance — Camera Management (Phase 11) ─────────────────────────
+// Foundation for all future surveillance use cases (PPE, Fire, Geo-fence, Face,
+// Motion, Vehicle, etc.). Those modules will reference Camera by id and read
+// the connection details here — no redesign required. Additive only.
+
+enum StreamType {
+  RTSP
+  RTMP
+  HTTP
+  LOCAL_WEBCAM
+  UPLOADED_VIDEO
+}
+
+enum CameraStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+enum CameraHealth {
+  ONLINE
+  OFFLINE
+  UNKNOWN
+}
+
+/// Fine-grained live-stream state (distinct from CameraHealth, which is the
+/// coarse administrative health). Drives the Live Monitoring UI in real time.
+enum StreamStatus {
+  OFFLINE
+  CONNECTING
+  ONLINE
+  RECONNECTING
+  ERROR
+}
+
+/// A surveillance camera. Designed to scale to hundreds of cameras across
+/// multiple sites and to absorb future analytics/AI config without a schema
+/// redesign: the open-ended `config` and `aiConfig` Json columns hold
+/// forward-looking properties, and `site` enables multi-warehouse deployments.
+model Camera {
+  id                    String        @id @default(uuid())
+
+  cameraCode            String        @unique
+  cameraName            String
+  location              String
+  cameraType            String        // FIXED | PTZ | DOME | BULLET | THERMAL | … (extensible)
+  cameraPurpose         String        // e.g. PPE | INTRUSION | GENERAL — free-form, extensible
+  description           String?
+
+  // ── Connection (sensitive) ──────────────────────────────────────────────
+  streamType            StreamType
+  streamUrl             String?
+  username              String?
+  // AES-256-GCM ciphertext — the plaintext password is NEVER stored or returned.
+  passwordEncrypted     String?
+
+  // ── Deployment ──────────────────────────────────────────────────────────
+  zone                  String        // Entry Gate, Loading Bay, Boundary Wall, … (configurable)
+  site                  String?       // multi-warehouse readiness
+
+  // ── Administration / health ─────────────────────────────────────────────
+  status                CameraStatus  @default(ACTIVE)
+  health                CameraHealth  @default(UNKNOWN)
+  installationDate      DateTime?
+  lastConnectivityCheck DateTime?
+  lastConnectivityResult String?      // SUCCESS | FAILED | INVALID_URL | AUTH_FAILED | TIMEOUT
+  notes                 String?
+
+  // ── Live streaming (Phase 12) ───────────────────────────────────────────
+  // Fine-grained, runtime-managed stream state + observed media metrics. The
+  // backend streaming layer is the single source of truth; these columns are a
+  // durable mirror so the UI and future AI consumers can read last-known state.
+  streamStatus          StreamStatus  @default(OFFLINE)
+  lastConnectedAt       DateTime?     // last time a live session connected
+  lastDisconnectedAt    DateTime?     // last time the live session dropped
+  lastStreamAt          DateTime?     // last successful frame/stream activity
+  resolution            String?       // e.g. "1920x1080" when reported by source
+  fps                   Int?          // observed frames per second when available
+  // Uploaded-video association (development/demo source that behaves like live).
+  videoFilePath         String?       // storage reference, never a public path
+  videoFileName         String?       // original display name
+
+  // ── Forward-looking extensibility (no redesign needed) ──────────────────
+  config                Json?         // arbitrary camera properties added later
+  aiConfig              Json?         // future per-camera AI / rule configuration
+
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  streamLogs            CameraStreamLog[]
+  surveillanceAlerts    SurveillanceAlert[]
+
+  @@index([status])
+  @@index([health])
+  @@index([zone])
+  @@index([streamType])
+  @@index([site])
+  @@index([streamStatus])
+}
+
+/// Append-only connection log for a camera's live stream lifecycle. Powers the
+/// "Connection Logs" panel and gives future analytics a durable event trail
+/// (connect / disconnect / reconnecting / error / session open-close).
+model CameraStreamLog {
+  id        String       @id @default(uuid())
+  cameraId  String
+  camera    Camera       @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  event     String       // CONNECTED | DISCONNECTED | RECONNECTING | ERROR | STREAM_OPENED | STREAM_CLOSED | SESSION_JOINED | SESSION_LEFT
+  status    StreamStatus // stream status snapshot at the moment of the event
+  message   String?
+  createdAt DateTime     @default(now())
+
+  @@index([cameraId])
+  @@index([cameraId, createdAt])
+  @@index([event])
+}
+
+// ─── AI Surveillance — Alerts (Phase 13) ────────────────────────────────────
+// The reusable alert system for EVERY AI surveillance use case. The first
+// detector is motion; future detectors (intrusion, face, vehicle, geo-fence,
+// over-speed, driver monitoring) reuse this exact model — they only add a new
+// SurveillanceAlertType value and emit alerts here. Purely additive.
+
+/// What produced the alert. Extend with new values as detectors are added; no
+/// structural change is ever required.
+enum SurveillanceAlertType {
+  MOTION
+  INTRUSION
+  WALL_INTRUSION
+  MAN_INSIDE_WAGON
+  OVER_SPEED
+  CANCELLED_VEHICLE
+  FACE_DETECTION
+  FACE
+  GEOFENCE
+  VEHICLE
+  OVERSPEED
+  DRIVER_MONITORING
+  OTHER
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlertStatus {
+  NEW
+  ACKNOWLEDGED
+  RESOLVED
+  DISMISSED
+}
+
+/// A surveillance alert raised by the AI service against a camera. Generic by
+/// design: `alertType` + `detectorType` identify the source, `detectionDetails`
+/// (Json) carries detector-specific evidence (motion area, boxes, confidence,
+/// speed, …), and `snapshotPath`/`clipPath` hold evidence — snapshot now, short
+/// video clips later — without a schema change.
+model SurveillanceAlert {
+  id               String                @id @default(uuid())
+
+  alertType        SurveillanceAlertType
+  detectorType     String                // e.g. "motion" — the detector that fired
+  cameraId         String
+  camera           Camera                @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  location         String                // denormalized camera location at alert time
+
+  severity         AlertSeverity         @default(MEDIUM)
+  status           AlertStatus           @default(NEW)
+  message          String
+
+  // ── Evidence (never returned as raw paths; served via an endpoint) ──────
+  snapshotPath     String?               // internal storage reference for the still
+  clipPath         String?               // future: short video clip reference
+  detectionDetails Json?                 // detector-specific structured evidence
+
+  detectedAt       DateTime              @default(now()) // event time from the AI service
+  acknowledgedBy   String?
+  acknowledgedAt   DateTime?
+  resolvedBy       String?
+  resolvedAt       DateTime?
+
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@index([cameraId])
+  @@index([alertType])
+  @@index([status])
+  @@index([severity])
+  @@index([detectedAt])
+  @@index([detectorType])
+  @@index([status, severity])
+}
+
+// ─── AI Surveillance — Face Registry (Phase 14) ─────────────────────────────
+// Authorized personnel and their face embeddings for the Face Detection use
+// case. Only embeddings + metadata are stored — never the source images. The
+// same reusable SurveillanceAlert model handles the FACE_DETECTION alert.
+// Designed to scale to thousands of employees with multiple faces each.
+
+/// A registered employee (authorized person).
+model Employee {
+  id           String         @id @default(uuid())
+  employeeCode String         @unique   // business Employee ID
+  name         String
+  department   String?
+  designation  String?
+  status       String         @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  faces        EmployeeFace[]
+
+  @@index([status])
+}
+
+/// One enrolled face embedding for an employee. An employee may have several
+/// (different angles / captures) to improve recognition robustness. The image
+/// itself is never persisted — only the embedding vector.
+model EmployeeFace {
+  id         String   @id @default(uuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  embedding  Json     // normalized face embedding vector (array of floats)
+  model      String   @default("insightface") // producing model (dimension/versioning)
+  quality    Float?   // detector confidence / det_score at enrollment
+
+  createdAt  DateTime @default(now())
+
+  @@index([employeeId])
+}
