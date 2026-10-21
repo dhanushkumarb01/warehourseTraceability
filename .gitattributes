@@ -1,1 +1,4 @@
 * text=auto
+
+# Prisma stores a checksum of each applied migration; never rewrite their line endings.
+backend/prisma/migrations/** -text
