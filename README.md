@@ -169,7 +169,7 @@ cameras and the backend; set `WARETRACE_API_URL` and the shared `AI_SERVICE_TOKE
 
 - **`[CONFIG] Required environment variable ... is not set`** — create `backend/.env` from the example.
 - **CORS errors in the browser** — add the frontend's exact origin to `FRONTEND_URL` and restart the backend.
-- **`Port 5173 is in use`** — run `npm run dev -- --port 5174` (already in the CORS list).
+- **`Port 5173 is in use`** — Vite moves to the next free port automatically. Ports 5173 and 5174 are in the backend's default CORS list; for any other port, add its origin to `FRONTEND_URL` and restart the backend.
 - **AI worker "Aborting" at start** — `AI_SERVICE_TOKEN` is empty in `ai-service/.env`.
 
 ## Documentation
