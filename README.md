@@ -184,7 +184,7 @@ Docker tunnel and vice versa.
 |-----------|---------------------------------------------------------------|--------------------------------------------|
 | frontend  | Vercel, https://warehouse-traceability.vercel.app (root `frontend/`) | automatically on push to `main`      |
 | backend   | Render free web service, https://warehouse-traceability-api.onrender.com (root `backend/`) | **manually** (dashboard or Render API) |
-| database  | Neon PostgreSQL                                                | migrations run in Render's build command   |
+| database  | Neon PostgreSQL (pooled connection)                            | migrations run in Render's build command (`PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1`) |
 | AI worker | a local machine running `ai-service/start-demo.ps1`, reachable via the ngrok domain | by hand            |
 
 Render's free tier sleeps when idle (the first request takes 30–60 s) and its disk is ephemeral:

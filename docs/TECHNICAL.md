@@ -671,9 +671,10 @@ region Ohio:
 - Build: `npm install && npx prisma generate && npx prisma migrate deploy`
 - Start: `npm start`
 - Health check path: `/health`
-- Env: `NODE_VERSION=20`, `NODE_ENV=production`, `SAP_MODE=mock`, plus the secrets
-  `DATABASE_URL`, `FRONTEND_URL`, `JWT_SECRET`, `CAMERA_ENC_KEY`, `AI_SERVICE_TOKEN`,
-  `BOOTSTRAP_ADMIN_*` and `AI_ENROLLMENT_URL`.
+- Env: `NODE_VERSION=20`, `NODE_ENV=production`, `SAP_MODE=mock`,
+  `PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1` (see Neon below), `AI_ENROLLMENT_URL`, plus the secrets
+  `DATABASE_URL`, `FRONTEND_URL`, `JWT_SECRET`, `CAMERA_ENC_KEY`, `AI_SERVICE_TOKEN` and
+  `BOOTSTRAP_ADMIN_*`.
 
 Pushes do **not** deploy (the Render GitHub app is not installed on the repository). Deploy from
 the dashboard ("Manual Deploy") or the API:
@@ -688,8 +689,13 @@ snapshots).
 
 ### Neon (database)
 
-Managed PostgreSQL. `prisma migrate deploy` works through Neon's pooled connection string, so no
-separate `DIRECT_URL` is configured.
+Managed PostgreSQL. `DATABASE_URL` is Neon's pooled (PgBouncer) connection string and
+`prisma migrate deploy` runs through it; no separate `DIRECT_URL` is configured. Because the pooler
+reuses server sessions, the session-level advisory lock Prisma takes during `migrate deploy` can
+stay held after a build, and the next build then fails with `P1002 … Timed out trying to acquire a
+postgres advisory lock`. Render therefore sets `PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1`; this is safe
+because only the single Render build ever runs migrations. (Alternative: run migrations against
+Neon's direct, non-pooler host.)
 
 ### CORS
 
@@ -800,6 +806,7 @@ from production once they are not needed.
 | `Bind for 0.0.0.0:<port> failed: port is already allocated` | Change `FRONTEND_PORT` / `BACKEND_PORT` / `AI_WORKER_PORT` in `.env` (and `FRONTEND_URL` / `VITE_API_BASE_URL` to match). |
 | `exec ./docker-entrypoint.sh: no such file or directory` | CRLF line endings in the script. `.gitattributes` forces LF for `*.sh`, Dockerfiles and compose files; save the file with LF or re-clone. |
 | `LF will be replaced by CRLF` warnings on Windows | Expected with `* text=auto`; files covered by `eol=lf` stay LF in the working tree. |
+| Render build fails with `P1002` "Timed out trying to acquire a postgres advisory lock" | Stale advisory lock on a pooled Neon session. Set `PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1` on the service (already set) and redeploy. |
 | Prisma reports a migration was modified | Its line endings were changed; migrations are `-text` in `.gitattributes`. Restore the file from git. |
 | AI status OFFLINE | No heartbeat in 30 s: worker stopped, wrong `WARETRACE_API_URL`, or token mismatch (401 in the worker log). |
 | Enrollment 503 "service is unavailable" | Backend cannot reach `AI_ENROLLMENT_URL`; `curl <url>/health`. |
