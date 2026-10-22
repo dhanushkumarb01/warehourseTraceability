@@ -7,7 +7,8 @@ monitoring) plug into the same pipeline by adding a detector + a rule.
 
 It lives inside the WareTrace project (not a separate repo), runs as an ordinary
 Python process, and talks to the Node backend over HTTP with a shared service
-token. No Docker, no Colab, no model training.
+token. No model training. It runs natively (`python main.py`) or as the `ai-worker` container of
+the root `docker-compose.yml`; see [docs/TECHNICAL.md](../docs/TECHNICAL.md#ai-worker).
 
 ## Architecture
 
