@@ -1,0 +1,15 @@
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+.pytest_cache
+.env
+.env.*
+.cache
+*.pt
+*.onnx
+*.log
+start-demo.ps1
+Dockerfile
+.dockerignore

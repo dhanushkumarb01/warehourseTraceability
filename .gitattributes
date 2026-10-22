@@ -1,4 +1,13 @@
 * text=auto
 
+# Files executed or parsed inside Linux containers must keep LF endings,
+# even when checked out on Windows (a CRLF shebang breaks the entrypoint).
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+.dockerignore text eol=lf
+docker-compose.yml text eol=lf
+*.conf text eol=lf
+
 # Prisma stores a checksum of each applied migration; never rewrite their line endings.
 backend/prisma/migrations/** -text
