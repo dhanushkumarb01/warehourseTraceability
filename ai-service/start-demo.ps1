@@ -1,15 +1,17 @@
 # Start the AI worker against the deployed backend and expose its face-enrollment
-# API through a Cloudflare quick tunnel.
+# API on a static ngrok domain.
 #
 #   powershell -ExecutionPolicy Bypass -File ai-service\start-demo.ps1
 #
-# A quick-tunnel URL changes on every start. If RENDER_API_KEY is set, the
-# script points the Render service's AI_ENROLLMENT_URL at the new URL and
-# redeploys it; otherwise it prints the URL to set by hand. Ctrl+C stops both.
+# The domain never changes, so the Render service's AI_ENROLLMENT_URL is set once
+# (https://<domain>) and needs no update or redeploy here. Requires ngrok on PATH
+# with an authtoken configured (`ngrok config add-authtoken <token>`) and
+# ai-service\.env holding the backend's AI_SERVICE_TOKEN. Ctrl+C stops both.
 
 param(
   [string]$ApiUrl = "https://warehouse-traceability-api.onrender.com",
-  [string]$RenderServiceId = "srv-dbcj0dl9fdbs73a17mh0"
+  [string]$Domain = "alexia-intertribal-nonsubtractively.ngrok-free.dev",
+  [int]$Port = 8600
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,7 +19,12 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $logDir = Join-Path $here ".cache"
 New-Item -ItemType Directory -Force $logDir | Out-Null
 $workerLog = Join-Path $logDir "worker.log"
-$tunnelLog = Join-Path $logDir "tunnel.log"
+$tunnelLog = Join-Path $logDir "ngrok.log"
+$publicUrl = "https://$Domain"
+
+if (-not (Get-Command ngrok -ErrorAction SilentlyContinue)) {
+  throw "ngrok is not on PATH. Install it from https://ngrok.com/download and run 'ngrok config add-authtoken <token>'."
+}
 
 # Wake the backend (Render free tier sleeps when idle).
 Write-Host "Waking backend $ApiUrl ..."
@@ -28,32 +35,26 @@ $env:PYTHONUNBUFFERED = "1"
 $worker = Start-Process python -ArgumentList "main.py" -WorkingDirectory $here -NoNewWindow -PassThru `
   -RedirectStandardOutput $workerLog -RedirectStandardError "$workerLog.err"
 
-# http2: QUIC registration times out on machines running Cloudflare WARP.
-$tunnel = Start-Process cloudflared -ArgumentList "tunnel --no-autoupdate --protocol http2 --url http://localhost:8600" `
-  -NoNewWindow -PassThru -RedirectStandardOutput "$tunnelLog.out" -RedirectStandardError $tunnelLog
+$tunnel = Start-Process ngrok -ArgumentList "http --url=$publicUrl --log=stdout $Port" `
+  -NoNewWindow -PassThru -RedirectStandardOutput $tunnelLog -RedirectStandardError "$tunnelLog.err"
 
 try {
-  $url = $null
-  for ($i = 0; $i -lt 60 -and -not $url; $i++) {
-    Start-Sleep -Seconds 1
-    $m = Select-String -Path $tunnelLog -Pattern 'https://[a-z0-9-]+\.trycloudflare\.com' -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($m) { $url = $m.Matches[0].Value }
+  # Ready when the worker's /health answers through the tunnel (the face model
+  # loads on the first call, so allow a few minutes). PowerShell's user agent
+  # looks like a browser, so skip ngrok's free-plan interstitial page.
+  $ready = $false
+  for ($i = 0; $i -lt 90 -and -not $ready; $i++) {
+    Start-Sleep -Seconds 2
+    if ($worker.HasExited) { throw "AI worker exited; see $workerLog and $workerLog.err" }
+    if ($tunnel.HasExited) { throw "ngrok exited; see $tunnelLog" }
+    try {
+      $ready = (Invoke-RestMethod "$publicUrl/health" -TimeoutSec 10 -Headers @{ "ngrok-skip-browser-warning" = "1" }).ok
+    } catch { }
   }
-  if (-not $url) { throw "Tunnel did not start; see $tunnelLog" }
-  Write-Host "Enrollment tunnel: $url"
+  if (-not $ready) { throw "Tunnel did not answer at $publicUrl/health; see $tunnelLog and $workerLog" }
 
-  if ($env:RENDER_API_KEY) {
-    $headers = @{ Authorization = "Bearer $env:RENDER_API_KEY" }
-    Invoke-RestMethod -Method Put -Uri "https://api.render.com/v1/services/$RenderServiceId/env-vars/AI_ENROLLMENT_URL" `
-      -Headers $headers -ContentType "application/json" -Body (@{ value = $url } | ConvertTo-Json) | Out-Null
-    Invoke-RestMethod -Method Post -Uri "https://api.render.com/v1/services/$RenderServiceId/deploys" `
-      -Headers $headers -ContentType "application/json" -Body "{}" | Out-Null
-    Write-Host "Updated AI_ENROLLMENT_URL on Render and started a redeploy (~2-3 min)."
-  } else {
-    Write-Host "Set AI_ENROLLMENT_URL=$url on the Render service (Environment tab), then save and deploy."
-  }
-
-  Write-Host "AI worker running (log: $workerLog). Press Ctrl+C to stop."
+  Write-Host "Enrollment URL: $publicUrl  (Render AI_ENROLLMENT_URL must equal this)"
+  Write-Host "AI worker running (logs: $workerLog, requests: $workerLog.err). Press Ctrl+C to stop."
   Wait-Process -Id $worker.Id
 } finally {
   foreach ($p in @($worker, $tunnel)) { if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force } }

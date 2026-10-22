@@ -27,6 +27,9 @@ services:
         sync: false
       - key: AI_SERVICE_TOKEN
         sync: false
+      # The AI worker's face-enrollment API, exposed on a static ngrok domain.
+      - key: AI_ENROLLMENT_URL
+        value: https://alexia-intertribal-nonsubtractively.ngrok-free.dev
       - key: BOOTSTRAP_ADMIN_USERNAME
         value: admin
       - key: BOOTSTRAP_ADMIN_EMAIL
