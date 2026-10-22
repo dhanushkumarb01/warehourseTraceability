@@ -17,6 +17,11 @@ services:
         value: production
       - key: SAP_MODE
         value: mock
+      # migrate deploy runs through Neon's PgBouncer pooler, where Prisma's
+      # session-level advisory lock can stay held and time out the next build
+      # (P1002). Only this single build ever migrates, so the lock is not needed.
+      - key: PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK
+        value: "1"
       - key: DATABASE_URL
         sync: false
       - key: FRONTEND_URL
