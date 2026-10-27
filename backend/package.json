@@ -10,7 +10,10 @@
     "migrate": "prisma migrate deploy",
     "migrate:dev": "prisma migrate dev",
     "seed:demo": "node prisma/seed.js",
-    "seed:trucks": "node prisma/seed_trucks.js"
+    "seed:trucks": "node prisma/seed_trucks.js",
+    "test": "node --test test/",
+    "test:unit": "node --test test/unit/",
+    "test:integration": "node --test test/integration/"
   },
   "keywords": [],
   "author": "",

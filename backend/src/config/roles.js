@@ -37,6 +37,14 @@ const GROUPS = Object.freeze({
   // Operational inventory transactions (mapping, move, remove, scan).
   OPERATIONS: [ROLES.ADMIN, ROLES.SUPERVISOR, ROLES.OPERATOR],
 
+  // Bay allocation for incoming lots — allot / cancel (supervisory). Recording
+  // arrival mode and confirming physical placement use OPERATIONS.
+  ALLOCATION_MANAGE: [ROLES.ADMIN, ROLES.SUPERVISOR],
+
+  // Viewing FOIS / SAP rail consignments waiting to be received (OPERATIONS ∪
+  // ALLOCATION_MANAGE). Importing one is ALLOCATION_MANAGE.
+  INBOUND_VIEW: [ROLES.ADMIN, ROLES.SUPERVISOR, ROLES.OPERATOR],
+
   // Dispatch request creation.
   DISPATCH_CREATE: [ROLES.ADMIN, ROLES.SUPERVISOR, ROLES.OPERATOR],
 

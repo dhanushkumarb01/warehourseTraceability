@@ -25,4 +25,7 @@ module.exports = {
   validateMaterial: (payload) => sap.validateMaterial(payload),
   validateInventory: (payload) => sap.validateInventory(payload),
   validateDispatch: (payload) => sap.validateDispatch(payload),
+  // Inbound rail consignments — MOCK / PLACEHOLDER dataset (sap/mock/inboundDataset.js).
+  getInboundConsignments: (filters) => sap.listInboundConsignments(filters),
+  getInboundConsignment: (source, externalRef) => sap.getInboundConsignment(source, externalRef),
 };

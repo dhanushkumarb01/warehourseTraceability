@@ -24,7 +24,9 @@ const { sendError } = require('../utils/responseHelper');
 const handlePrismaError = (err) => {
   // Unique constraint violation
   if (err.code === 'P2002') {
-    const field = err.meta?.target?.join(', ') || 'field';
+    // target is an array of columns, or an index name for raw (partial) indexes.
+    const target = err.meta?.target;
+    const field = (Array.isArray(target) ? target.join(', ') : target) || 'field';
     return new AppError(`A record with this ${field} already exists.`, 409);
   }
 

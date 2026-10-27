@@ -20,6 +20,7 @@
 
 const prisma = require('../config/prisma');
 const AppError = require('../utils/AppError');
+const { ensureZoneByName } = require('./zoneService');
 
 /**
  * Fetch every bay ordered by creation date (newest first).
@@ -78,16 +79,21 @@ const createBay = async (data) => {
     );
   }
 
-  return prisma.bay.create({
-    data: {
-      bayCode,
-      bayName,
-      zone,
-      latitude:           parseFloat(latitude),
-      longitude:          parseFloat(longitude),
-      polygonCoordinates: polygonCoordinates ?? null,
-      status,
-    },
+  // The zone label is linked to its Zone row (registered by name if new).
+  return prisma.$transaction(async (tx) => {
+    const zoneRecord = await ensureZoneByName(tx, zone);
+    return tx.bay.create({
+      data: {
+        bayCode,
+        bayName,
+        zone,
+        zoneId:             zoneRecord.id,
+        latitude:           parseFloat(latitude),
+        longitude:          parseFloat(longitude),
+        polygonCoordinates: polygonCoordinates ?? null,
+        status,
+      },
+    });
   });
 };
 
@@ -129,17 +135,21 @@ const updateBay = async (id, data) => {
     }
   }
 
-  return prisma.bay.update({
-    where: { id },
-    data: {
-      bayCode,
-      bayName,
-      zone,
-      latitude:           parseFloat(latitude),
-      longitude:          parseFloat(longitude),
-      polygonCoordinates: polygonCoordinates ?? null,
-      status,
-    },
+  return prisma.$transaction(async (tx) => {
+    const zoneRecord = await ensureZoneByName(tx, zone);
+    return tx.bay.update({
+      where: { id },
+      data: {
+        bayCode,
+        bayName,
+        zone,
+        zoneId:             zoneRecord.id,
+        latitude:           parseFloat(latitude),
+        longitude:          parseFloat(longitude),
+        polygonCoordinates: polygonCoordinates ?? null,
+        status,
+      },
+    });
   });
 };
 
