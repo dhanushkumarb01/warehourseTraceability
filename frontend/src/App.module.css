@@ -23,19 +23,26 @@
 .content {
   min-height: calc(100vh - var(--header-h));
   min-height: calc(100dvh - var(--header-h));
+  padding: 28px 32px 48px;
+  max-width: 1680px;
+  margin: 0 auto;
 }
+
+/* Full-bleed pages (e.g. the yard map) opt out of the content padding. */
+.content:has(> [data-fullbleed]) { padding: 0; max-width: none; }
 
 /* Mobile drawer backdrop */
 .backdrop {
   position: fixed;
   inset: 0;
   z-index: 95;
-  background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(2px);
+  background: var(--c-scrim);
+  backdrop-filter: blur(3px);
   animation: wt-fade-in 0.2s var(--ease) both;
 }
 
 @media (max-width: 768px) {
   .shell { --sb: 0px; }
   .main { margin-left: 0; }
+  .content { padding: 18px 16px 40px; }
 }

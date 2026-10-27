@@ -1,9 +1,12 @@
 # WareTrace — Warehouse Traceability
 
-End-to-end warehouse and yard traceability: bay and material/lot mapping with QR codes, dispatch
-approval and gate validation, truck journey tracking with RFID, SAP validation, role-based access,
-and AI camera surveillance (motion, person/wall intrusion, man inside wagon, vehicle over-speed,
-cancelled vehicle, face registry).
+End-to-end warehouse and yard traceability: rail and road receiving with bay allocation, bay and
+material/lot mapping with QR codes, dispatch approval and gate validation, truck journey tracking
+with RFID, SAP validation, role-based access, and AI camera surveillance (motion, person/wall
+intrusion, man inside wagon, vehicle over-speed, cancelled vehicle, face registry).
+
+The web app is branded **SAIL Yard** and has a redesigned light/dark interface (the theme toggle is
+in the top bar and on the sign-in page; the choice is remembered per browser).
 
 The full technical reference (architecture, API routes, data model, every environment variable,
 deployment and security notes) is in **[docs/TECHNICAL.md](docs/TECHNICAL.md)**.
@@ -29,6 +32,26 @@ flowchart LR
 | `docs/`       | Technical reference, phase documents and the SAP integration spec                  |
 
 Roles: `ADMIN`, `SUPERVISOR`, `OPERATOR`, `MANAGER` (see `backend/src/config/roles.js`).
+
+## Receiving & storage
+
+One page, **Receiving & storage** (`/inbound`), takes material from arrival to a bay. It replaces the
+old Bays & Layout, Materials and Bay Allocation pages (their URLs redirect).
+
+- **Inbound queue** — lots moving from *awaiting arrival* → *pending allocation* → *allotted*, with
+  Rail / Road filters, scan-to-place and direct placement.
+- **In storage** — placed lots with move, remove, movement history and lot / bay QR codes.
+- **Catalogue** — materials and their lots.
+- **Layout** — bays, zones and loading docks, with a quick *Add bay* form.
+
+**Receive material** is the only way to add stock. *Road* arrivals are entered in one step (material
+and lot). *Rail* arrivals are picked from the pending FOIS / SAP consignment list and imported, so
+nothing is re-typed. A ranked bay recommendation (a static placeholder until a demand model exists)
+then helps a supervisor allot a bay, and an operator confirms the physical placement. Details:
+[docs/INBOUND.md](docs/INBOUND.md) and [docs/BAY_ALLOCATION.md](docs/BAY_ALLOCATION.md).
+
+The feature adds two migrations (`arrival_mode_bay_allocation`, `inbound_lot_source`); they apply
+with `npm run migrate` (Docker and Render run them automatically).
 
 ## Quick start with Docker (recommended)
 
@@ -194,6 +217,8 @@ uploaded videos and alert snapshots disappear on every deploy or restart. See
 ## Quality checks
 
 ```bash
+cd backend && npm test             # unit tests; integration suite skipped without TEST_DATABASE_URL
+TEST_DATABASE_URL=postgresql://... npm run test:integration   # disposable, fully migrated DB only
 cd frontend && npm run lint && npm run build
 docker compose config --quiet      # validates docker-compose.yml + .env
 ```
@@ -224,6 +249,8 @@ More in [docs/TECHNICAL.md](docs/TECHNICAL.md#troubleshooting).
 ## Documentation
 
 - [docs/TECHNICAL.md](docs/TECHNICAL.md) — complete technical reference
+- [docs/INBOUND.md](docs/INBOUND.md) — the Receiving & storage page and the FOIS / SAP rail import
+- [docs/BAY_ALLOCATION.md](docs/BAY_ALLOCATION.md) — arrival mode, layout coordinates, bay recommendation and allocation
 - [ai-service/README.md](ai-service/README.md) — AI worker internals
 - `docs/PHASE5_MATERIAL_BAY_MAPPING.md`, `docs/PHASE6_DISPATCH_GATE.md`, `docs/PHASE7_AUTH_RBAC.md`,
   `docs/SAP_INTEGRATION_SPEC.md` — phase design documents

@@ -23,6 +23,9 @@
  */
 
 import { useEffect, useState } from 'react';
+import { Modal, Field, Button, FormAlert, Banner } from '../ui';
+import { Icons } from '../ui/icons';
+import { uiStyles } from '../ui/styles';
 import styles from './MappingModal.module.css';
 
 function MappingModal({
@@ -67,111 +70,72 @@ function MappingModal({
   };
 
   return (
-    <div className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="mapping-modal-title">
-      <div className={styles.modal}>
-        <div className={styles.header}>
-          <div className={styles.headerLeft}>
-            <div className={styles.headerIcon}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17H5V5h8v6m0 6h6v-6h-6m0-6l6 6" />
-              </svg>
-            </div>
-            <div>
-              <h2 id="mapping-modal-title" className={styles.title}>
-                {isMove ? 'Move Material' : 'Map Material to Bay'}
-              </h2>
-              <p className={styles.subtitle}>
-                {isMove
-                  ? 'Relocate this lot to a different bay — history is preserved.'
-                  : 'Place a material lot into a warehouse bay.'}
-              </p>
-            </div>
+    <Modal
+      isOpen
+      onClose={onClose}
+      busy={isSubmitting}
+      icon={isMove ? Icons.arrowRight : Icons.pin}
+      title={isMove ? 'Move to another storage spot' : 'Put a batch in a storage spot'}
+      subtitle={isMove ? 'Its movement history is kept.' : 'Choose the batch and where it is now stored.'}
+      as="form"
+      onSubmit={handleSubmit}
+      footer={(
+        <>
+          <Button onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+          <Button type="submit" variant="primary" icon={Icons.check} loading={isSubmitting} disabled={!canSubmit}>
+            {isMove ? 'Move batch' : 'Confirm storage spot'}
+          </Button>
+        </>
+      )}
+    >
+      <div className={uiStyles.formSection}>
+        <FormAlert>{error}</FormAlert>
+
+        {isMove || lot ? (
+          <div className={styles.fixedValue}>
+            <span className={styles.fixedIcon}>{Icons.box}</span>
+            <span className={styles.fixedText}>
+              <span className={uiStyles.strong}>{lot?.material?.materialName || 'Batch'}</span>
+              <span className={uiStyles.sub}>Batch <span className={uiStyles.mono}>{lot?.lotCode}</span></span>
+            </span>
           </div>
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-
-        <form className={styles.body} onSubmit={handleSubmit}>
-          {error && <div className={styles.errorBanner}>{error}</div>}
-
-          {/* Lot selection */}
-          <div className={styles.field}>
-            <label className={styles.label}>Material Lot</label>
-            {isMove || lot ? (
-              <div className={styles.fixedValue}>
-                <span className={styles.code}>{lot?.lotCode}</span>
-                {lot?.material?.materialName && (
-                  <span className={styles.muted}>{lot.material.materialName}</span>
-                )}
-              </div>
-            ) : (
-              <select
-                className={styles.select}
-                value={lotId}
-                onChange={(e) => setLotId(e.target.value)}
-                required
-              >
-                <option value="">Select an available lot…</option>
+        ) : (
+          <Field label="Which batch?" required>
+            {(p) => (
+              <select {...p} value={lotId} onChange={(e) => setLotId(e.target.value)} required>
+                <option value="">Choose a batch that isn’t stored yet…</option>
                 {availableLots.map((l) => (
                   <option key={l.id} value={l.id}>
-                    {l.lotCode}
-                    {l.material?.materialName ? ` — ${l.material.materialName}` : ''} ({l.quantity} {l.unit})
+                    {l.material?.materialName ? `${l.material.materialName} — ` : ''}{l.lotCode} ({l.quantity} {l.unit})
                   </option>
                 ))}
               </select>
             )}
-            {!isMove && availableLots.length === 0 && !lot && (
-              <p className={styles.hint}>No available lots. Every lot is already mapped or dispatched.</p>
-            )}
-          </div>
+          </Field>
+        )}
+        {!isMove && availableLots.length === 0 && !lot && (
+          <Banner tone="info">Every batch is already stored or sent out, so there’s nothing to place.</Banner>
+        )}
 
-          {/* Bay selection */}
-          <div className={styles.field}>
-            <label className={styles.label}>{isMove ? 'Destination Bay' : 'Target Bay'}</label>
-            <select
-              className={styles.select}
-              value={bayId}
-              onChange={(e) => setBayId(e.target.value)}
-              required
-            >
-              <option value="">Select a bay…</option>
+        <Field label={isMove ? 'Move it to' : 'Storage spot'} required hint="Spots that are out of use can’t be chosen.">
+          {(p) => (
+            <select {...p} value={bayId} onChange={(e) => setBayId(e.target.value)} required>
+              <option value="">Choose a storage spot…</option>
               {selectableBays.map((b) => (
                 <option key={b.id} value={b.id} disabled={b.status === 'INACTIVE'}>
                   {b.bayCode} — {b.bayName} · {b.zone}
-                  {b.status === 'INACTIVE' ? ' (inactive)' : ''}
+                  {b.status === 'INACTIVE' ? ' (out of use)' : b.status === 'OCCUPIED' ? ' (in use)' : ' (free)'}
                 </option>
               ))}
             </select>
-          </div>
+          )}
+        </Field>
 
-          {/* Remarks */}
-          <div className={styles.field}>
-            <label className={styles.label}>Remarks <span className={styles.optional}>(optional)</span></label>
-            <textarea
-              className={styles.textarea}
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="e.g. Inbound GRN-1042, staged for QC"
-              rows={2}
-              maxLength={500}
-            />
-          </div>
-
-          <div className={styles.footer}>
-            <button type="button" className={styles.cancelBtn} onClick={onClose} disabled={isSubmitting}>
-              Cancel
-            </button>
-            <button type="submit" className={styles.submitBtn} disabled={!canSubmit}>
-              {isSubmitting ? 'Saving…' : isMove ? 'Confirm Move' : 'Confirm Mapping'}
-            </button>
-          </div>
-        </form>
+        <Field label="Note" optional>
+          {(p) => <textarea {...p} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. Delivery note GRN-1042, waiting for quality check" rows={2} maxLength={500} />}
+        </Field>
       </div>
-    </div>
+    </Modal>
   );
 }
 

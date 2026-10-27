@@ -15,20 +15,19 @@ import {
   fetchTrucks, ingestRFIDEvent,
 } from '../../services/truckService';
 import Toast from '../../components/Toast/Toast';
+import StatusBadge from '../../components/StatusBadge/StatusBadge';
+import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog';
+import { TRUCK_STAGES, STAGE_BY_KEY, stageLabel } from '../../config/truckStages';
+import {
+  PageHeader, StatCard, Card, Button, SegmentedControl, LiveIndicator, DataTable, LoadingRows, ErrorState,
+  EmptyState, Modal, Field, FormAlert, Skeleton, StatusChip, DetailList, Banner,
+} from '../../components/ui';
+import { Icons } from '../../components/ui/icons';
+import { uiStyles } from '../../components/ui/styles';
 import styles from './RFIDMonitoring.module.css';
 
-const STAGES = [
-  { key: 'ENTRY_GATE', label: 'Entry Gate', icon: '🚪', color: '#3b82f6' },
-  { key: 'WEIGH_BRIDGE_1', label: 'Weigh Bridge 1', icon: '⚖️', color: '#8b5cf6' },
-  { key: 'LOADING_DOCK', label: 'Loading Dock', icon: '📦', color: '#f59e0b' },
-  { key: 'WEIGH_BRIDGE_2', label: 'Weigh Bridge 2', icon: '⚖️', color: '#8b5cf6' },
-  { key: 'INVOICE', label: 'Invoice', icon: '📋', color: '#0d9488' },
-  { key: 'PARKING', label: 'Parking', icon: '🅿️', color: '#64748b' },
-  { key: 'EXIT_GATE', label: 'Exit Gate', icon: '🚛', color: '#16a34a' },
-];
-
-const STAGE_MAP = Object.fromEntries(STAGES.map((s) => [s.key, s]));
 const fmtTime = (d) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Never';
+const READER_TYPES = { FIXED: 'Fixed (mounted)', HANDHELD: 'Handheld', PORTAL: 'Portal (drive-through)' };
 
 function RFIDMonitoring() {
   const { can } = useAuth();
@@ -41,6 +40,9 @@ function RFIDMonitoring() {
   const [trucks, setTrucks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState({ message: '', type: '' });
   const showToast = (message, type = 'info') => setToast({ message, type });
 
@@ -68,8 +70,9 @@ function RFIDMonitoring() {
       setReaderDashboard(dash);
       setReaders(rdr);
       setTrucks(trk);
+      setUpdatedAt(new Date());
     } catch (err) {
-      setError(err.message || 'Failed to load RFID data.');
+      setError(err);
     } finally {
       setIsLoading(false);
     }
@@ -80,7 +83,7 @@ function RFIDMonitoring() {
   // Auto-refresh health every 30s
   useEffect(() => {
     const iv = setInterval(() => {
-      fetchReaderDashboard().then(setReaderDashboard).catch(() => {});
+      fetchReaderDashboard().then((d) => { setReaderDashboard(d); setUpdatedAt(new Date()); }).catch(() => {});
     }, 30000);
     return () => clearInterval(iv);
   }, []);
@@ -106,10 +109,10 @@ function RFIDMonitoring() {
     try {
       if (editReader) {
         await updateReader(editReader.id, readerForm);
-        showToast('Reader updated.', 'success');
+        showToast(`Reader ${readerForm.readerCode} updated.`, 'success');
       } else {
         await createReader(readerForm);
-        showToast('Reader created.', 'success');
+        showToast(`Reader ${readerForm.readerCode} added.`, 'success');
       }
       setShowReaderForm(false);
       loadAll();
@@ -120,14 +123,19 @@ function RFIDMonitoring() {
     }
   };
 
-  const handleDeleteReader = async (r) => {
-    if (!window.confirm(`Delete reader ${r.readerCode}?`)) return;
+  const handleDeleteReader = async () => {
+    const r = deleteTarget;
+    if (!r) return;
+    setDeleting(true);
     try {
       await deleteReader(r.id);
-      showToast('Reader deleted.', 'success');
+      showToast(`Reader ${r.readerCode} deleted.`, 'success');
+      setDeleteTarget(null);
       loadAll();
     } catch (err) {
       showToast(err.message || 'Failed to delete reader.', 'error');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -142,7 +150,7 @@ function RFIDMonitoring() {
       payload.source = simForm.source || 'SIMULATED';
       const result = await ingestRFIDEvent(payload);
       setSimResult(result);
-      showToast(`Event recorded at ${result.stage}${result.alerts?.length ? ` — ${result.alerts.length} alert(s)!` : ''}`, result.alerts?.length ? 'warning' : 'success');
+      showToast(`Scan recorded at ${stageLabel(result.stage)}${result.alerts?.length ? ` — it raised ${result.alerts.length} ${result.alerts.length === 1 ? 'alert' : 'alerts'}` : ''}.`, result.alerts?.length ? 'warning' : 'success');
       // Refresh dashboard
       fetchReaderDashboard().then(setReaderDashboard).catch(() => {});
     } catch (err) {
@@ -153,334 +161,276 @@ function RFIDMonitoring() {
   };
 
   const dash = readerDashboard || {};
+  const setRF = (k) => (e) => setReaderForm({ ...readerForm, [k]: e.target.value });
+  const readerState = (r) => (r.live ? 'ONLINE' : r.status === 'MAINTENANCE' ? 'MAINTENANCE' : 'OFFLINE');
 
   return (
     <div className={styles.page}>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: '' })} />
 
-      {/* ── Page Header ─────────────────────────────────────────────────── */}
-      <div className={styles.pageHeader}>
-        <div className={styles.pageHeaderLeft}>
-          <div className={styles.pageIcon}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-          </div>
-          <div>
-            <h1 className={styles.pageTitle}>RFID Infrastructure</h1>
-            <p className={styles.pageBreadcrumb}>Reader monitoring, health metrics & event simulation</p>
-          </div>
-        </div>
-        <div className={styles.headerActions}>
-          <div className={styles.viewToggle}>
-            <button className={`${styles.viewBtn} ${view === 'health' ? styles.viewActive : ''}`} onClick={() => setView('health')}>
-              📡 Health
-            </button>
-            <button className={`${styles.viewBtn} ${view === 'registry' ? styles.viewActive : ''}`} onClick={() => setView('registry')}>
-              📋 Registry
-            </button>
-            {canEvent && (
-              <button className={`${styles.viewBtn} ${view === 'simulator' ? styles.viewActive : ''}`} onClick={() => setView('simulator')}>
-                🧪 Simulator
-              </button>
-            )}
-          </div>
-          <button className={styles.refreshBtn} onClick={loadAll} disabled={isLoading} title="Refresh">
-            <svg viewBox="0 0 20 20" fill="currentColor" className={isLoading ? styles.spinning : ''}><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        icon={Icons.rfid}
+        title="RFID readers"
+        term="RFID infrastructure"
+        subtitle="The tag readers at each step of a truck’s visit, and whether they’re working."
+        meta={<LiveIndicator updatedAt={updatedAt} onRefresh={loadAll} refreshing={isLoading && Boolean(readerDashboard)} />}
+        actions={(
+          <>
+            <SegmentedControl
+              ariaLabel="View"
+              value={view}
+              onChange={setView}
+              options={[
+                { value: 'health', label: 'Status', icon: Icons.signal },
+                { value: 'registry', label: 'All readers', icon: Icons.list },
+                ...(canEvent ? [{ value: 'simulator', label: 'Test a scan', icon: Icons.bolt }] : []),
+              ]}
+            />
+            {canManage && view === 'registry' && <Button variant="primary" icon={Icons.plus} onClick={openCreateReader}>Add reader</Button>}
+          </>
+        )}
+      />
 
-      {/* ── Health Metrics ──────────────────────────────────────────────── */}
-      <div className={styles.metricsStrip}>
-        <MetricCard label="Total Readers" value={isLoading ? '—' : dash.total} icon="📡" color="#3b82f6" />
-        <MetricCard label="Online" value={isLoading ? '—' : dash.online} icon="🟢" color="#16a34a" />
-        <MetricCard label="Offline" value={isLoading ? '—' : dash.offline} icon="🔴" color="#dc2626" />
-        <MetricCard label="Maintenance" value={isLoading ? '—' : dash.maintenance} icon="🔧" color="#d97706" />
-      </div>
+      <section className={styles.kpis} aria-label="Reader summary">
+        <StatCard icon={Icons.rfid} label="Readers" value={isLoading && !readerDashboard ? null : dash.total} loading={isLoading && !readerDashboard} tone="info" hint="Installed across the route" />
+        <StatCard icon={Icons.signal} label="Working" value={isLoading && !readerDashboard ? null : dash.online} loading={isLoading && !readerDashboard} tone="success" hint="Checked in recently" />
+        <StatCard icon={Icons.wifiOff} label="Not responding" value={isLoading && !readerDashboard ? null : dash.offline} loading={isLoading && !readerDashboard}
+          tone={dash.offline > 0 ? 'danger' : 'success'} status={dash.offline > 0 ? 'Check' : 'All good'}
+          hint="Trucks passing here won’t be tracked" help="A reader that hasn’t checked in recently. Trucks passing it are not recorded until it comes back." />
+        <StatCard icon={Icons.cog} label="In maintenance" value={isLoading && !readerDashboard ? null : dash.maintenance} loading={isLoading && !readerDashboard} tone="warning" hint="Switched off on purpose" />
+      </section>
 
-      {error && (
-        <div className={styles.errorBanner}>
-          <p>{error}</p>
-          <button onClick={loadAll}>Retry</button>
-        </div>
+      {error && !readerDashboard && (
+        <Card><ErrorState title="We couldn’t load the RFID readers" error={error} onRetry={loadAll} /></Card>
       )}
 
-      {/* ── Health View ─────────────────────────────────────────────────── */}
+      {/* ── Status view ── */}
       {view === 'health' && (
-        <div className={styles.healthView}>
-          <h2 className={styles.sectionTitle}>
-            <span className={styles.liveDot} />
-            Reader Health Grid
-          </h2>
-          {isLoading ? (
-            <div className={styles.healthGrid}>
-              {Array.from({ length: 4 }).map((_, i) => <div key={i} className={`${styles.healthCard} wt-skeleton`} style={{ height: 140 }} />)}
-            </div>
+        <Card icon={Icons.route} title="Readers along the truck route" subtitle="Grouped by the step of the visit they record">
+          {isLoading && !readerDashboard ? (
+            <div className={styles.healthGrid}>{[0, 1, 2, 3].map((i) => <Skeleton key={i} height={128} radius={16} />)}</div>
           ) : !dash.readers?.length ? (
-            <div className={styles.emptyState}>
-              <p>No readers registered. Add readers to start monitoring.</p>
-            </div>
+            <EmptyState icon={Icons.rfid} title="No readers added yet" message="Add a reader for each gate or weighbridge so trucks are tracked automatically."
+              action={canManage && <Button variant="primary" icon={Icons.plus} onClick={() => { setView('registry'); openCreateReader(); }}>Add reader</Button>} />
           ) : (
-            <>
-              {/* Group by stage */}
-              {STAGES.map((stage) => {
+            <div className={styles.stageList}>
+              {TRUCK_STAGES.map((stage, i) => {
                 const stageReaders = (dash.readers || []).filter((r) => r.stage === stage.key);
-                if (stageReaders.length === 0) return null;
                 return (
-                  <div key={stage.key} className={styles.stageGroup}>
-                    <h3 className={styles.stageGroupTitle} style={{ '--stage-color': stage.color }}>
-                      {stage.icon} {stage.label}
+                  <section key={stage.key} className={styles.stageGroup}>
+                    <h3 className={styles.stageGroupTitle}>
+                      <span className={styles.stageIcon}>{Icons[stage.icon]}</span>
+                      {i + 1}. {stage.label}
                       <span className={styles.stageCount}>{stageReaders.length}</span>
                     </h3>
-                    <div className={styles.healthGrid}>
-                      {stageReaders.map((r) => (
-                        <div key={r.id} className={`${styles.healthCard} ${r.live ? styles.cardOnline : r.status === 'MAINTENANCE' ? styles.cardMaintenance : styles.cardOffline}`}>
-                          <div className={styles.healthCardHeader}>
-                            <span className={styles.readerCode}>{r.readerCode}</span>
-                            <span className={`${styles.statusIndicator} ${r.live ? styles.indicatorOnline : r.status === 'MAINTENANCE' ? styles.indicatorMaint : styles.indicatorOffline}`}>
-                              {r.live ? 'ONLINE' : r.status}
-                            </span>
-                          </div>
-                          <p className={styles.readerName}>{r.readerName}</p>
-                          <div className={styles.healthMeta}>
-                            {r.ipAddress && <span>🌐 {r.ipAddress}</span>}
-                            {r.location && <span>📍 {r.location}</span>}
-                            <span>⏰ {fmtTime(r.lastHeartbeat)}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                    {stageReaders.length === 0 ? (
+                      <p className={styles.noReader}>{Icons.warning}No reader here — trucks won’t be recorded at this step.</p>
+                    ) : (
+                      <div className={styles.healthGrid}>
+                        {stageReaders.map((r) => (
+                          <article key={r.id} className={`${styles.healthCard} ${styles[`rs_${readerState(r)}`]}`}>
+                            <div className={styles.healthCardHeader}>
+                              <span className={styles.readerCode}>{r.readerCode}</span>
+                              <StatusBadge status={readerState(r)} size="sm" />
+                            </div>
+                            <p className={styles.readerName}>{r.readerName}</p>
+                            <div className={styles.healthMeta}>
+                              {r.location && <span>{Icons.pin}{r.location}</span>}
+                              {r.ipAddress && <span>{Icons.link}{r.ipAddress}</span>}
+                              <span>{Icons.clock}Last check-in: {fmtTime(r.lastHeartbeat)}</span>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 );
               })}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── Registry View ───────────────────────────────────────────────── */}
-      {view === 'registry' && (
-        <div className={styles.registryView}>
-          <div className={styles.sectionHeader}>
-            <h2 className={styles.sectionTitle}>Reader Registry</h2>
-            {canManage && (
-              <button className={styles.primaryBtn} onClick={openCreateReader}>
-                <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
-                Add Reader
-              </button>
-            )}
-          </div>
-          {isLoading ? (
-            <div className={styles.loadingRows}>{Array.from({ length: 3 }).map((_, i) => <div key={i} className="wt-skeleton" style={{ height: 44, width: '100%', marginBottom: 8 }} />)}</div>
-          ) : readers.length === 0 ? (
-            <div className={styles.emptyState}><p>No readers in registry.</p></div>
-          ) : (
-            <div className={styles.card}>
-              <div className={styles.tableWrap}>
-                <table className={styles.table}>
-                  <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Stage</th><th>IP</th><th>Location</th><th>Status</th><th>Heartbeat</th>{canManage && <th></th>}</tr></thead>
-                  <tbody>
-                    {readers.map((r) => {
-                      const stg = STAGE_MAP[r.stage] || {};
-                      return (
-                        <tr key={r.id}>
-                          <td><span className={styles.code}>{r.readerCode}</span></td>
-                          <td>{r.readerName}</td>
-                          <td>{r.readerType}</td>
-                          <td>
-                            <span className={styles.stagePill} style={{ '--stage-color': stg.color || '#64748b' }}>
-                              {stg.icon} {stg.label || r.stage}
-                            </span>
-                          </td>
-                          <td className={styles.muted}>{r.ipAddress || '—'}</td>
-                          <td className={styles.muted}>{r.location || '—'}</td>
-                          <td>
-                            <span className={`${styles.statusPill} ${styles[`s_${r.live ? 'LIVE' : r.status}`]}`}>
-                              {r.live ? '● ONLINE' : r.status}
-                            </span>
-                          </td>
-                          <td className={styles.muted}>{fmtTime(r.lastHeartbeat)}</td>
-                          {canManage && (
-                            <td className={styles.actions}>
-                              <button className={styles.actionBtn} onClick={() => openEditReader(r)} title="Edit">✏️</button>
-                              <button className={styles.actionBtn} onClick={() => handleDeleteReader(r)} title="Delete">🗑️</button>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
             </div>
           )}
-        </div>
+        </Card>
       )}
 
-      {/* ── Simulator View ──────────────────────────────────────────────── */}
+      {/* ── All readers ── */}
+      {view === 'registry' && (
+        <Card icon={Icons.list} title="All readers" subtitle={`${readers.length} ${readers.length === 1 ? 'reader' : 'readers'}`} padded={false}>
+          {isLoading ? <LoadingRows rows={4} /> : readers.length === 0 ? (
+            <EmptyState icon={Icons.rfid} title="No readers added yet" message="Add a reader for each gate or weighbridge."
+              action={canManage && <Button variant="primary" icon={Icons.plus} onClick={openCreateReader}>Add reader</Button>} />
+          ) : (
+            <DataTable
+              caption="RFID readers"
+              rows={readers}
+              defaultSort={{ key: 'stage', dir: 'asc' }}
+              rowTone={(r) => (readerState(r) === 'OFFLINE' ? 'danger' : undefined)}
+              columns={[
+                {
+                  key: 'readerCode', header: 'Reader', primary: true,
+                  render: (r) => (
+                    <>
+                      <span className={uiStyles.strong}>{r.readerName}</span>
+                      <span className={uiStyles.sub}><span className={uiStyles.mono}>{r.readerCode}</span> · {READER_TYPES[r.readerType] || r.readerType}</span>
+                    </>
+                  ),
+                },
+                { key: 'stage', header: 'Route step', sortValue: (r) => STAGE_BY_KEY[r.stage]?.index ?? 99, render: (r) => <StatusChip tone="brand" icon={Icons[STAGE_BY_KEY[r.stage]?.icon] || Icons.pin} size="sm">{stageLabel(r.stage)}</StatusChip> },
+                { key: 'location', header: 'Location', render: (r) => r.location || <span className={uiStyles.soft}>—</span> },
+                { key: 'ipAddress', header: 'Network address', hideOnMobile: true, render: (r) => (r.ipAddress ? <span className={uiStyles.mono}>{r.ipAddress}</span> : <span className={uiStyles.soft}>—</span>) },
+                { key: 'status', header: 'Status', sortValue: (r) => readerState(r), render: (r) => <StatusBadge status={readerState(r)} size="sm" /> },
+                { key: 'lastHeartbeat', header: 'Last check-in', sortValue: (r) => (r.lastHeartbeat ? new Date(r.lastHeartbeat).getTime() : 0), render: (r) => <span className={uiStyles.muted}>{fmtTime(r.lastHeartbeat)}</span> },
+              ]}
+              actions={canManage ? (r) => [
+                { label: 'Edit reader', icon: Icons.edit, onClick: () => openEditReader(r) },
+                { label: 'Delete reader', icon: Icons.trash, onClick: () => setDeleteTarget(r), danger: true },
+              ] : undefined}
+            />
+          )}
+        </Card>
+      )}
+
+      {/* ── Test a scan ── */}
       {view === 'simulator' && canEvent && (
-        <div className={styles.simulatorView}>
-          <div className={styles.simLayout}>
-            <div className={styles.simPanel}>
-              <h2 className={styles.sectionTitle}>🧪 RFID Event Simulator</h2>
-              <p className={styles.simDesc}>
-                Simulate RFID tag scans using the exact same API pipeline that future hardware will use.
-                Select a truck and a reader, then generate the event.
-              </p>
-              <form onSubmit={handleSimulate} className={styles.simForm}>
-                <label className={styles.formGroup}>
-                  <span>Truck *</span>
-                  <select required value={simForm.truckId} onChange={(e) => setSimForm({ ...simForm, truckId: e.target.value })}>
-                    <option value="">Select a truck…</option>
+        <div className={styles.simLayout}>
+          <Card icon={Icons.bolt} title="Test a scan" subtitle="Pretend a truck’s tag passed a reader. It goes through the same steps as a real scan.">
+            <form onSubmit={handleSimulate} className={styles.simForm} noValidate>
+              <Banner tone="warning">This records a real event on the truck’s visit. Use it for testing and training only.</Banner>
+              <FormAlert>{simError}</FormAlert>
+              <Field label="Truck" required>
+                {(p) => (
+                  <select {...p} required value={simForm.truckId} onChange={(e) => setSimForm({ ...simForm, truckId: e.target.value })}>
+                    <option value="">Choose a truck…</option>
                     {trucks.filter((t) => t.status === 'ACTIVE').map((t) => (
                       <option key={t.id} value={t.id}>{t.truckNumber} — {t.driverName}</option>
                     ))}
                   </select>
-                </label>
-                <label className={styles.formGroup}>
-                  <span>Reader *</span>
-                  <select required value={simForm.readerId} onChange={(e) => setSimForm({ ...simForm, readerId: e.target.value })}>
-                    <option value="">Select a reader…</option>
-                    {readers.map((r) => {
-                      const stg = STAGE_MAP[r.stage] || {};
-                      return <option key={r.id} value={r.id}>{r.readerCode} — {stg.icon} {stg.label}</option>;
-                    })}
+                )}
+              </Field>
+              <Field label="Reader" required hint="Where the truck is pretending to be.">
+                {(p) => (
+                  <select {...p} required value={simForm.readerId} onChange={(e) => setSimForm({ ...simForm, readerId: e.target.value })}>
+                    <option value="">Choose a reader…</option>
+                    {readers.map((r) => <option key={r.id} value={r.id}>{r.readerCode} — {stageLabel(r.stage)}</option>)}
                   </select>
-                </label>
-                <label className={styles.formGroup}>
-                  <span>Source</span>
-                  <select value={simForm.source} onChange={(e) => setSimForm({ ...simForm, source: e.target.value })}>
-                    <option value="SIMULATED">SIMULATED</option>
-                    <option value="RFID">RFID</option>
-                    <option value="MANUAL">MANUAL</option>
+                )}
+              </Field>
+              <Field label="Recorded as" help="How the event will be labelled in the truck’s history.">
+                {(p) => (
+                  <select {...p} value={simForm.source} onChange={(e) => setSimForm({ ...simForm, source: e.target.value })}>
+                    <option value="SIMULATED">Test scan</option>
+                    <option value="RFID">RFID reader</option>
+                    <option value="MANUAL">Manual entry</option>
                   </select>
-                </label>
-                {simError && <p className={styles.formError}>{simError}</p>}
-                <button type="submit" className={styles.primaryBtn} disabled={simBusy} style={{ width: '100%', justifyContent: 'center' }}>
-                  {simBusy ? 'Processing…' : '⚡ Generate RFID Event'}
-                </button>
-              </form>
-            </div>
-
-            <div className={styles.simResults}>
-              <h2 className={styles.sectionTitle}>Event Result</h2>
-              {simResult ? (
-                <div className={styles.resultCard}>
-                  <div className={styles.resultHeader}>
-                    <span className={styles.resultSuccess}>✅ Event Recorded</span>
-                    {simResult.alerts?.length > 0 && <span className={styles.resultAlertBadge}>⚠️ {simResult.alerts.length} alert(s)</span>}
-                  </div>
-                  <div className={styles.resultGrid}>
-                    <ResultRow label="Truck" value={simResult.truck?.truckNumber} />
-                    <ResultRow label="Stage" value={simResult.stage} />
-                    <ResultRow label="Reader" value={simResult.reader?.readerCode} />
-                    <ResultRow label="Visit" value={simResult.visit?.visitNumber} />
-                    <ResultRow label="Visit Status" value={simResult.visit?.status} />
-                    <ResultRow label="Risk" value={simResult.visit?.riskStatus} />
-                  </div>
-                  {simResult.alerts?.length > 0 && (
-                    <div className={styles.resultAlerts}>
-                      <h4>Alerts Raised</h4>
-                      {simResult.alerts.map((a) => (
-                        <div key={a.id} className={styles.resultAlertRow}>
-                          <span className={styles.alertTypeTag}>{a.alertType.replace(/_/g, ' ')}</span>
-                          <span>{a.message}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className={styles.simPlaceholder}>
-                  <span className={styles.simPlaceholderIcon}>📡</span>
-                  <p>Select a truck and reader, then generate an event to see results here.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Reader Form Modal ────────────────────────────────────────────── */}
-      {showReaderForm && (
-        <div className={styles.modalOverlay} onClick={() => setShowReaderForm(false)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.modalHeader}>
-              <h3>{editReader ? 'Edit Reader' : 'Add Reader'}</h3>
-              <button className={styles.modalClose} onClick={() => setShowReaderForm(false)}>✕</button>
-            </div>
-            <form onSubmit={handleReaderSubmit}>
-              <div className={styles.formGrid}>
-                <label className={styles.formGroup}>
-                  <span>Reader Code *</span>
-                  <input required maxLength={40} value={readerForm.readerCode} onChange={(e) => setReaderForm({ ...readerForm, readerCode: e.target.value })} placeholder="e.g. RDR-ENTRY-01" />
-                </label>
-                <label className={styles.formGroup}>
-                  <span>Reader Name *</span>
-                  <input required maxLength={100} value={readerForm.readerName} onChange={(e) => setReaderForm({ ...readerForm, readerName: e.target.value })} placeholder="e.g. Entry Gate Reader 1" />
-                </label>
-                <label className={styles.formGroup}>
-                  <span>Type</span>
-                  <select value={readerForm.readerType} onChange={(e) => setReaderForm({ ...readerForm, readerType: e.target.value })}>
-                    <option value="FIXED">FIXED</option>
-                    <option value="HANDHELD">HANDHELD</option>
-                    <option value="PORTAL">PORTAL</option>
-                  </select>
-                </label>
-                <label className={styles.formGroup}>
-                  <span>Stage *</span>
-                  <select value={readerForm.stage} onChange={(e) => setReaderForm({ ...readerForm, stage: e.target.value })}>
-                    {STAGES.map((s) => <option key={s.key} value={s.key}>{s.icon} {s.label}</option>)}
-                  </select>
-                </label>
-                <label className={styles.formGroup}>
-                  <span>IP Address</span>
-                  <input maxLength={64} value={readerForm.ipAddress} onChange={(e) => setReaderForm({ ...readerForm, ipAddress: e.target.value })} placeholder="e.g. 192.168.1.100" />
-                </label>
-                <label className={styles.formGroup}>
-                  <span>Location</span>
-                  <input maxLength={120} value={readerForm.location} onChange={(e) => setReaderForm({ ...readerForm, location: e.target.value })} placeholder="e.g. Main Entry, Left Lane" />
-                </label>
-                <label className={styles.formGroup}>
-                  <span>Status</span>
-                  <select value={readerForm.status} onChange={(e) => setReaderForm({ ...readerForm, status: e.target.value })}>
-                    <option value="OFFLINE">OFFLINE</option>
-                    <option value="ONLINE">ONLINE</option>
-                    <option value="MAINTENANCE">MAINTENANCE</option>
-                  </select>
-                </label>
-              </div>
-              {readerFormError && <p className={styles.formError}>{readerFormError}</p>}
-              <div className={styles.formActions}>
-                <button type="button" className={styles.cancelBtn} onClick={() => setShowReaderForm(false)}>Cancel</button>
-                <button type="submit" className={styles.primaryBtn} disabled={readerFormBusy}>
-                  {readerFormBusy ? 'Saving…' : editReader ? 'Update Reader' : 'Add Reader'}
-                </button>
-              </div>
+                )}
+              </Field>
+              <Button type="submit" variant="primary" block icon={Icons.bolt} loading={simBusy} disabled={!simForm.truckId || !simForm.readerId}>
+                {simBusy ? 'Recording…' : 'Record test scan'}
+              </Button>
             </form>
-          </div>
+          </Card>
+
+          <Card icon={Icons.checkCircle} title="Result">
+            {simResult ? (
+              <div className={styles.result}>
+                <div className={styles.resultHeader}>
+                  <StatusChip tone="success" icon={Icons.check}>Scan recorded</StatusChip>
+                  {simResult.alerts?.length > 0 && <StatusChip tone="warning">{simResult.alerts.length} {simResult.alerts.length === 1 ? 'alert' : 'alerts'} raised</StatusChip>}
+                </div>
+                <DetailList
+                  items={[
+                    { label: 'Truck', value: <span className={uiStyles.mono}>{simResult.truck?.truckNumber || '—'}</span> },
+                    { label: 'Step', value: stageLabel(simResult.stage) },
+                    { label: 'Reader', value: <span className={uiStyles.mono}>{simResult.reader?.readerCode || '—'}</span> },
+                    { label: 'Visit', value: <span className={uiStyles.mono}>{simResult.visit?.visitNumber || '—'}</span> },
+                    { label: 'Visit status', value: simResult.visit?.status ? simResult.visit.status.toLowerCase() : '—' },
+                    { label: 'Risk', value: simResult.visit?.riskStatus ? <StatusBadge status={simResult.visit.riskStatus} size="sm" /> : '—' },
+                  ]}
+                />
+                {simResult.alerts?.length > 0 && (
+                  <ul className={styles.resultAlerts}>
+                    {simResult.alerts.map((a) => (
+                      <li key={a.id}>{Icons.warning}<span><strong>{a.alertType.replace(/_/g, ' ').toLowerCase()}</strong> — {a.message}</span></li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : (
+              <EmptyState icon={Icons.rfid} title="No test scan yet" message="Choose a truck and a reader, then record a test scan to see what happens." />
+            )}
+          </Card>
         </div>
       )}
-    </div>
-  );
-}
 
-function MetricCard({ label, value, icon, color }) {
-  return (
-    <div className={styles.metricCard} style={{ '--metric-color': color }}>
-      <div className={styles.metricIcon}>{icon}</div>
-      <div className={styles.metricBody}>
-        <span className={styles.metricValue}>{value}</span>
-        <span className={styles.metricLabel}>{label}</span>
-      </div>
-    </div>
-  );
-}
+      {/* ── Reader form ── */}
+      <Modal
+        isOpen={showReaderForm}
+        onClose={() => setShowReaderForm(false)}
+        busy={readerFormBusy}
+        icon={Icons.rfid}
+        title={editReader ? `Edit reader ${editReader.readerCode}` : 'Add a reader'}
+        subtitle="Each reader records trucks at one step of their visit."
+        as="form"
+        onSubmit={handleReaderSubmit}
+        footer={(
+          <>
+            <Button onClick={() => setShowReaderForm(false)} disabled={readerFormBusy}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={readerFormBusy} disabled={!readerForm.readerCode.trim() || !readerForm.readerName.trim()}>
+              {editReader ? 'Save changes' : 'Add reader'}
+            </Button>
+          </>
+        )}
+      >
+        <div className={uiStyles.formSection}>
+          <FormAlert>{readerFormError}</FormAlert>
+          <div className={uiStyles.formGrid}>
+            <Field label="Reader code" required hint="Printed on the device">
+              {(p) => <input {...p} maxLength={40} value={readerForm.readerCode} onChange={setRF('readerCode')} placeholder="e.g. RDR-ENTRY-01" />}
+            </Field>
+            <Field label="Name" required>
+              {(p) => <input {...p} maxLength={100} value={readerForm.readerName} onChange={setRF('readerName')} placeholder="e.g. Entry gate reader 1" />}
+            </Field>
+            <Field label="Route step" required help="Which step of the truck’s visit this reader records.">
+              {(p) => (
+                <select {...p} value={readerForm.stage} onChange={setRF('stage')}>
+                  {TRUCK_STAGES.map((st, i) => <option key={st.key} value={st.key}>{i + 1}. {st.label}</option>)}
+                </select>
+              )}
+            </Field>
+            <Field label="Type">
+              {(p) => (
+                <select {...p} value={readerForm.readerType} onChange={setRF('readerType')}>
+                  {Object.entries(READER_TYPES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              )}
+            </Field>
+            <Field label="Location" optional>
+              {(p) => <input {...p} maxLength={120} value={readerForm.location} onChange={setRF('location')} placeholder="e.g. Main entry, left lane" />}
+            </Field>
+            <Field label="Network (IP) address" optional>
+              {(p) => <input {...p} maxLength={64} value={readerForm.ipAddress} onChange={setRF('ipAddress')} placeholder="e.g. 192.168.1.100" />}
+            </Field>
+            <Field label="Status" className={uiStyles.span2} hint="Readers switch to Working automatically when they check in.">
+              {(p) => (
+                <select {...p} value={readerForm.status} onChange={setRF('status')}>
+                  <option value="OFFLINE">Not responding</option>
+                  <option value="ONLINE">Working</option>
+                  <option value="MAINTENANCE">In maintenance</option>
+                </select>
+              )}
+            </Field>
+          </div>
+        </div>
+      </Modal>
 
-function ResultRow({ label, value }) {
-  return (
-    <div className={styles.resultRow}>
-      <span className={styles.resultLabel}>{label}</span>
-      <span className={styles.resultValue}>{value || '—'}</span>
+      <ConfirmDialog
+        isOpen={Boolean(deleteTarget)}
+        title="Delete this reader?"
+        message={`Reader ${deleteTarget?.readerCode} (${deleteTarget?.readerName}) will be removed.`}
+        details={['Trucks passing this spot won’t be recorded any more.', 'Past scans stay in each truck’s history.']}
+        confirmLabel="Delete reader"
+        isProcessing={deleting}
+        onConfirm={handleDeleteReader}
+        onCancel={() => { if (!deleting) setDeleteTarget(null); }}
+      />
     </div>
   );
 }

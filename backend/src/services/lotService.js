@@ -29,12 +29,49 @@ const getLotById = async (id) => {
   return lot;
 };
 
+const lotData = ({ lotCode, quantity, unit, receivedDate, status, arrivalMode = null }) => ({
+  lotCode,
+  quantity,
+  unit,
+  receivedDate: new Date(receivedDate),
+  status: status || 'AVAILABLE',
+  // Arrival mode may be captured at receipt; later changes go through the
+  // placement workflow so they are locked once a bay is allotted.
+  arrivalMode,
+  arrivalRecordedAt: arrivalMode ? new Date() : null,
+});
+
+/**
+ * Create a lot for an existing material (`materialId`), or together with a new
+ * material (`material: { materialCode, materialName, materialType, … }`) in one
+ * transaction so a half-finished receipt never leaves an orphan material.
+ */
 const createLot = async (data, actingUserId = null) => {
-  const { lotCode, materialId, quantity, unit, receivedDate, status } = data;
+  const { lotCode, materialId, material: newMaterial } = data;
 
   const existing = await prisma.materialLot.findUnique({ where: { lotCode } });
   if (existing) {
     throw new AppError(`Lot Code "${lotCode}" is already in use.`, 409);
+  }
+
+  if (newMaterial) {
+    const { materialCode, materialName, materialType, manufacturer, supplier, description } = newMaterial;
+    const codeTaken = await prisma.material.findUnique({ where: { materialCode } });
+    if (codeTaken) {
+      throw new AppError(`Material Code "${materialCode}" already exists. Choose it from the list instead of creating it again.`, 409);
+    }
+
+    const { material, lot } = await prisma.$transaction(async (tx) => {
+      const material = await tx.material.create({
+        data: { materialCode, materialName, materialType, manufacturer, supplier, description, status: 'ACTIVE' },
+      });
+      const lot = await tx.materialLot.create({ data: { ...lotData(data), materialId: material.id } });
+      return { material, lot };
+    });
+
+    await auditService.logAction('MATERIAL', 'CREATE', material.id, `Created material ${materialCode} while receiving lot ${lotCode}`, actingUserId);
+    await auditService.logAction('MATERIAL_LOT', 'CREATE', lot.id, `Created lot ${lotCode}`, actingUserId);
+    return lot;
   }
 
   const material = await prisma.material.findUnique({ where: { id: materialId } });
@@ -43,14 +80,7 @@ const createLot = async (data, actingUserId = null) => {
   }
 
   const lot = await prisma.materialLot.create({
-    data: {
-      lotCode,
-      materialId,
-      quantity,
-      unit,
-      receivedDate: new Date(receivedDate),
-      status: status || 'AVAILABLE'
-    }
+    data: { ...lotData(data), materialId },
   });
 
   await auditService.logAction('MATERIAL_LOT', 'CREATE', lot.id, `Created lot ${lotCode}`, actingUserId);
@@ -92,13 +122,17 @@ const updateLot = async (id, data, actingUserId = null) => {
 };
 
 const deleteLot = async (id, actingUserId = null) => {
-  const existingLot = await prisma.materialLot.findUnique({ where: { id }, include: { mappings: true, dispatches: true } });
+  const existingLot = await prisma.materialLot.findUnique({ where: { id }, include: { mappings: true, dispatches: true, allocations: true } });
   if (!existingLot) {
     throw new AppError(`Lot with ID "${id}" not found.`, 404);
   }
 
   if (existingLot.mappings.length > 0 || existingLot.dispatches.length > 0) {
     throw new AppError(`Cannot delete Lot. It has active bay mappings or dispatches.`, 400);
+  }
+
+  if (existingLot.allocations.length > 0) {
+    throw new AppError(`Cannot delete Lot. It has bay allocation history.`, 400);
   }
 
   await prisma.materialLot.delete({ where: { id } });

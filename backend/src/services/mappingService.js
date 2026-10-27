@@ -144,7 +144,95 @@ const loadTargetBay = async (tx, bayId) => {
   return bay;
 };
 
+/**
+ * Take a row lock on the lot for the rest of the transaction. Serialises every
+ * placement / allocation decision for the same lot, so two concurrent requests
+ * cannot both pass their "is it free?" checks.
+ *
+ * @param {import('@prisma/client').Prisma.TransactionClient} tx
+ * @param {string} lotId
+ */
+const lockLot = (tx, lotId) =>
+  tx.$queryRaw`SELECT "id" FROM "MaterialLot" WHERE "id" = ${lotId} FOR UPDATE`;
+
 // ─── Write operations ─────────────────────────────────────────────────────────
+
+/**
+ * Place a lot into a bay inside an existing transaction. Shared by the manual
+ * Map action, the dual-QR scan and allocation confirmation, so occupancy, lot
+ * status and audit are handled by one implementation.
+ *
+ * If a supervisor has allotted the lot to a bay (open BayAllocation), the lot
+ * may only be placed in THAT bay; the allocation is then marked PLACED.
+ *
+ * @param {import('@prisma/client').Prisma.TransactionClient} tx
+ * @param {{ lotId: string, bayId: string, remarks?: string, mappedBy?: string }} input
+ * @returns {Promise<object>} the created mapping (with includes)
+ */
+const createMappingInTx = async (tx, { lotId, bayId, remarks = null, mappedBy = null }) => {
+  await lockLot(tx, lotId);
+  const lot = await loadMappableLot(tx, lotId);
+  const bay = await loadTargetBay(tx, bayId);
+
+  const activeExisting = await tx.materialBayMapping.findFirst({
+    where: { lotId, status: 'ACTIVE' },
+    include: { bay: true },
+  });
+  if (activeExisting) {
+    throw new AppError(
+      `Lot "${lot.lotCode}" is already mapped to bay "${activeExisting.bay.bayCode}". ` +
+      `Use the Move action to relocate it.`,
+      409
+    );
+  }
+
+  const allocation = await tx.bayAllocation.findFirst({
+    where: { lotId, status: 'ALLOCATED' },
+    include: { bay: true },
+  });
+  if (allocation && allocation.bayId !== bayId) {
+    throw new AppError(
+      `Lot "${lot.lotCode}" has been allotted to bay "${allocation.bay.bayCode}". ` +
+      `Place it there, or ask a supervisor to cancel the allocation first.`,
+      409
+    );
+  }
+
+  const userId = await resolveActingUserId(tx, mappedBy);
+
+  const mapping = await tx.materialBayMapping.create({
+    data: { lotId, bayId, mappedBy: userId, status: 'ACTIVE', remarks },
+    include: MAPPING_INCLUDE,
+  });
+
+  await tx.materialLot.update({ where: { id: lotId }, data: { status: 'MAPPED' } });
+  await syncBayOccupancy(tx, bayId);
+
+  if (allocation) {
+    await tx.bayAllocation.update({
+      where: { id: allocation.id },
+      data: { status: 'PLACED', placedMappingId: mapping.id, placedAt: new Date() },
+    });
+  }
+
+  await writeAudit(tx, {
+    action: 'MATERIAL_MAPPED_TO_BAY',
+    entityId: mapping.id,
+    userId,
+    metadata: {
+      mappingId: mapping.id,
+      lotId,
+      lotCode: lot.lotCode,
+      bayId,
+      bayCode: bay.bayCode,
+      zone: bay.zone,
+      allocationId: allocation?.id ?? null,
+      remarks,
+    },
+  });
+
+  return mapping;
+};
 
 /**
  * Create a NEW active mapping (place a lot into a bay for the first time, or
@@ -157,51 +245,8 @@ const loadTargetBay = async (tx, bayId) => {
  * @param {{ lotId: string, bayId: string, remarks?: string, mappedBy?: string }} input
  * @returns {Promise<object>} the created mapping (with includes)
  */
-const createMapping = async ({ lotId, bayId, remarks = null, mappedBy = null }) => {
-  return prisma.$transaction(async (tx) => {
-    const lot = await loadMappableLot(tx, lotId);
-    const bay = await loadTargetBay(tx, bayId);
-
-    const activeExisting = await tx.materialBayMapping.findFirst({
-      where: { lotId, status: 'ACTIVE' },
-      include: { bay: true },
-    });
-    if (activeExisting) {
-      throw new AppError(
-        `Lot "${lot.lotCode}" is already mapped to bay "${activeExisting.bay.bayCode}". ` +
-        `Use the Move action to relocate it.`,
-        409
-      );
-    }
-
-    const userId = await resolveActingUserId(tx, mappedBy);
-
-    const mapping = await tx.materialBayMapping.create({
-      data: { lotId, bayId, mappedBy: userId, status: 'ACTIVE', remarks },
-      include: MAPPING_INCLUDE,
-    });
-
-    await tx.materialLot.update({ where: { id: lotId }, data: { status: 'MAPPED' } });
-    await syncBayOccupancy(tx, bayId);
-
-    await writeAudit(tx, {
-      action: 'MATERIAL_MAPPED_TO_BAY',
-      entityId: mapping.id,
-      userId,
-      metadata: {
-        mappingId: mapping.id,
-        lotId,
-        lotCode: lot.lotCode,
-        bayId,
-        bayCode: bay.bayCode,
-        zone: bay.zone,
-        remarks,
-      },
-    });
-
-    return mapping;
-  });
-};
+const createMapping = async (input) =>
+  prisma.$transaction((tx) => createMappingInTx(tx, input));
 
 /**
  * Move a lot from its current bay to a different bay.
@@ -523,4 +568,10 @@ module.exports = {
   // shared inventory helper — reused by the gate-exit flow so bay occupancy
   // is reconciled by a single, canonical implementation.
   syncBayOccupancy,
+  // shared transactional helpers — reused by the bay-allocation flow.
+  createMappingInTx,
+  lockLot,
+  loadTargetBay,
+  resolveActingUserId,
+  MAPPING_INCLUDE,
 };

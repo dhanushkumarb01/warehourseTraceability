@@ -15,14 +15,10 @@ import { useState, useEffect } from 'react';
 import StatusBadge from '../StatusBadge/StatusBadge';
 import { generateQR, getQRImageUrl, getQRDownloadUrl } from '../../services/qrService';
 import { fetchBayInventory } from '../../services/mappingService';
-import styles from './BayDetailModal.module.css';
-
-const Field = ({ label, value }) => (
-  <div className={styles.field}>
-    <span className={styles.label}>{label}</span>
-    <span className={styles.value}>{value ?? '—'}</span>
-  </div>
-);
+import { Modal, Button, DetailList, StatusChip, Skeleton, FormAlert, DataTable } from '../ui';
+import { Icons } from '../ui/icons';
+import { uiStyles } from '../ui/styles';
+import styles from '../LotDetailModal/LotDetailModal.module.css';
 
 function BayDetailModal({ isOpen, onClose, bay, onBayUpdated }) {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -69,164 +65,106 @@ function BayDetailModal({ isOpen, onClose, bay, onBayUpdated }) {
 
   const hasQR = bay.qrStatus === 'GENERATED';
 
+  const lotCount = inventory?.lotCount ?? 0;
+
   return (
-    <div className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="bay-detail-title">
-      <div className={styles.modal}>
-        {/* Header */}
-        <div className={styles.header}>
-          <div className={styles.headerLeft}>
-            <div className={styles.headerIcon}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path strokeLinecap="round" d="M9 9h6M9 13h6M9 17h4" />
-              </svg>
-            </div>
-            <div>
-              <h2 id="bay-detail-title" className={styles.title}>Bay Details</h2>
-              <p className={styles.subtitle}>{bay.bayCode}</p>
-            </div>
-          </div>
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Close details">
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Status Banner */}
-        <div className={styles.statusBanner}>
-          <StatusBadge status={bay.status} />
-        </div>
-
-        {/* Content */}
-        <div className={styles.body}>
+    <Modal
+      isOpen
+      onClose={onClose}
+      size="lg"
+      icon={Icons.pin}
+      title={`Storage spot ${bay.bayCode}`}
+      subtitle={[bay.bayName !== bay.bayCode ? bay.bayName : null, bay.zone].filter(Boolean).join(' · ')}
+      footer={<Button variant="primary" onClick={onClose}>Close</Button>}
+    >
+      <div className={styles.layout}>
+        <div className={styles.main}>
           <section className={styles.section}>
-            <h3 className={styles.sectionTitle}>Bay Information</h3>
-            <div className={styles.grid}>
-              <Field label="Bay Code" value={bay.bayCode} />
-              <Field label="Bay Name" value={bay.bayName} />
-              <Field label="Zone" value={bay.zone} />
-              <Field label="Status" value={<StatusBadge status={bay.status} />} />
+            <div className={styles.sectionHead}>
+              <h3 className={uiStyles.sectionTitle}>About this spot</h3>
+              <StatusBadge status={bay.status} size="sm" />
             </div>
+            <DetailList
+              items={[
+                { label: 'Spot code', value: <span className={uiStyles.mono}>{bay.bayCode}</span> },
+                { label: 'Name', value: bay.bayName },
+                { label: 'Yard area', value: bay.zone },
+                { label: 'Status', value: <StatusBadge status={bay.status} size="sm" /> },
+              ]}
+            />
           </section>
 
           <section className={styles.section}>
-            <div className={styles.qrHeader}>
-              <h3 className={styles.sectionTitle}>Materials Stored</h3>
-              <span className={styles.invCountBadge}>
-                {invLoading ? '…' : `${inventory?.lotCount ?? 0} lots`}
-              </span>
+            <div className={styles.sectionHead}>
+              <h3 className={uiStyles.sectionTitle}>What’s stored here?</h3>
+              {!invLoading && <StatusChip tone={lotCount ? 'orange' : 'teal'} size="sm">{lotCount ? `${lotCount} ${lotCount === 1 ? 'batch' : 'batches'}` : 'Empty'}</StatusChip>}
             </div>
-            <div className={styles.invWrap}>
-              {invLoading ? (
-                <p className={styles.invEmpty}>Loading inventory…</p>
-              ) : !inventory || inventory.lotCount === 0 ? (
-                <p className={styles.invEmpty}>No materials are currently stored in this bay.</p>
-              ) : (
-                <>
-                  <div className={styles.invSummary}>
-                    <Field label="Inventory Count" value={inventory.lotCount} />
-                    <Field label="Total Quantity" value={inventory.totalQuantity.toLocaleString('en-IN')} />
-                  </div>
-                  <div className={styles.invTableWrap}>
-                    <table className={styles.invTable}>
-                      <thead>
-                        <tr><th>Lot Code</th><th>Material</th><th>Qty</th><th>Received</th><th>Mapped</th></tr>
-                      </thead>
-                      <tbody>
-                        {inventory.mappings.map((m) => (
-                          <tr key={m.id}>
-                            <td><span className={styles.invCode}>{m.lot?.lotCode}</span></td>
-                            <td>{m.lot?.material?.materialName || '—'}</td>
-                            <td>{m.lot?.quantity} {m.lot?.unit}</td>
-                            <td>{m.lot?.receivedDate ? new Date(m.lot.receivedDate).toLocaleDateString('en-IN') : '—'}</td>
-                            <td>{new Date(m.mappedAt).toLocaleDateString('en-IN')}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </div>
-          </section>
-
-          <section className={styles.section}>
-            <div className={styles.qrHeader}>
-              <h3 className={styles.sectionTitle}>Digital Identity (QR)</h3>
-              {hasQR && (
-                <span className={styles.qrGeneratedBadge}>Generated</span>
-              )}
-            </div>
-            
-            <div className={styles.qrContainer}>
-              {qrError && <div className={styles.qrError}>{qrError}</div>}
-              
-              {!hasQR ? (
-                <div className={styles.qrEmptyState}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <rect x="3" y="3" width="7" height="7" rx="1"/>
-                    <rect x="14" y="3" width="7" height="7" rx="1"/>
-                    <rect x="14" y="14" width="7" height="7" rx="1"/>
-                    <rect x="3" y="14" width="7" height="7" rx="1"/>
-                  </svg>
-                  <p>No QR Code generated yet</p>
-                  <button 
-                    className={styles.generateBtn} 
-                    onClick={handleGenerate}
-                    disabled={isGenerating}
-                  >
-                    {isGenerating ? 'Generating...' : 'Generate QR'}
-                  </button>
+            {invLoading ? <Skeleton height={80} radius={12} /> : lotCount === 0 ? (
+              <p className={styles.empty}>Nothing is stored in this spot right now.</p>
+            ) : (
+              <>
+                <p className={styles.empty}>Total quantity: <strong className="wt-num">{inventory.totalQuantity.toLocaleString('en-IN')}</strong> (all batches added together)</p>
+                <div className={uiStyles.card}>
+                  <DataTable
+                    dense
+                    caption="Batches in this storage spot"
+                    rows={inventory.mappings}
+                    defaultSort={{ key: 'mappedAt', dir: 'desc' }}
+                    columns={[
+                      {
+                        key: 'lot', header: 'Batch', primary: true, sortValue: (m) => m.lot?.lotCode,
+                        render: (m) => (
+                          <>
+                            <span className={uiStyles.strong}>{m.lot?.material?.materialName || 'Material'}</span>
+                            <span className={uiStyles.sub}><span className={uiStyles.mono}>{m.lot?.lotCode}</span></span>
+                          </>
+                        ),
+                      },
+                      { key: 'qty', header: 'Quantity', align: 'right', sortValue: (m) => Number(m.lot?.quantity), render: (m) => <span className="wt-num">{m.lot?.quantity} {m.lot?.unit}</span> },
+                      { key: 'mappedAt', header: 'Stored since', sortValue: (m) => new Date(m.mappedAt).getTime(), render: (m) => new Date(m.mappedAt).toLocaleDateString('en-IN') },
+                    ]}
+                  />
                 </div>
-              ) : (
-                <div className={styles.qrPreviewContainer}>
-                  <div className={styles.qrImageWrap}>
-                    <img 
-                      src={getQRImageUrl('BAY', bay.id)} 
-                      alt={`QR Code for ${bay.bayCode}`} 
-                      className={styles.qrImage} 
-                    />
-                  </div>
-                  <div className={styles.qrActions}>
-                    <Field label="QR Version" value={`v${bay.qrVersion}`} />
-                    <Field label="Generated On" value={new Date(bay.qrGeneratedAt).toLocaleDateString('en-IN')} />
-                    <a 
-                      href={getQRDownloadUrl('BAY', bay.id)}
-                      download
-                      className={styles.downloadBtn}
-                    >
-                      <svg viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                      Download PNG
-                    </a>
-                  </div>
-                </div>
-              )}
-            </div>
+              </>
+            )}
           </section>
 
-          <section className={styles.section}>
-            <h3 className={styles.sectionTitle}>System Information</h3>
-            <div className={styles.grid}>
-              <Field label="Record ID" value={bay.id} />
-              <Field label="Created At" value={createdAt} />
-              <Field label="Updated At" value={updatedAt} />
-            </div>
-          </section>
+          <details className={styles.system}>
+            <summary>System details</summary>
+            <DetailList
+              items={[
+                { label: 'Record ID', value: <span className={uiStyles.mono}>{bay.id}</span> },
+                { label: 'Created', value: createdAt },
+                { label: 'Last changed', value: updatedAt },
+              ]}
+            />
+          </details>
         </div>
 
-        {/* Footer */}
-        <div className={styles.footer}>
-          <button className={styles.closeFooterBtn} onClick={onClose}>
-            Close
-          </button>
-        </div>
+        <aside className={styles.qr}>
+          <h3 className={uiStyles.sectionTitle}>QR label</h3>
+          <FormAlert>{qrError}</FormAlert>
+          {!hasQR ? (
+            <div className={styles.qrEmpty}>
+              <span className={styles.qrEmptyIcon}>{Icons.qr}</span>
+              <p>No QR label yet. Create one to print and fix at this spot, so staff can scan it when storing material.</p>
+              <Button variant="primary" icon={Icons.qr} onClick={handleGenerate} loading={isGenerating}>Create QR label</Button>
+            </div>
+          ) : (
+            <>
+              <div className={styles.qrImageWrap}>
+                <img src={getQRImageUrl('BAY', bay.id)} alt={`QR label for storage spot ${bay.bayCode}`} className={styles.qrImage} />
+              </div>
+              <p className={styles.qrMeta}>Version {bay.qrVersion} · created {new Date(bay.qrGeneratedAt).toLocaleDateString('en-IN')}</p>
+              <a href={getQRDownloadUrl('BAY', bay.id)} download className={styles.download}>
+                {Icons.download}Download to print
+              </a>
+            </>
+          )}
+        </aside>
       </div>
-    </div>
+    </Modal>
   );
 }
 
 export default BayDetailModal;
-

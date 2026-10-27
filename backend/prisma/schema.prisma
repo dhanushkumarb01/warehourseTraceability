@@ -68,6 +68,35 @@ enum QRStatus {
   GENERATED
 }
 
+// ─── Inbound arrival + bay allocation ───────────────────────────────────────
+
+/// How a material lot reached the warehouse.
+enum ArrivalMode {
+  RAIL
+  ROAD
+}
+
+/// Lifecycle of a supervisor's bay allotment for an incoming lot.
+enum AllocationStatus {
+  ALLOCATED   // Bay allotted, awaiting physical placement
+  PLACED      // Lot physically placed in the allotted bay (mapping created)
+  CANCELLED   // Withdrawn before placement
+}
+
+/// Administrative status for configurable warehouse locations (loading docks).
+enum LocationStatus {
+  ACTIVE
+  INACTIVE
+}
+
+/// Where a lot's record originated. MANUAL = keyed in here; FOIS / SAP =
+/// imported from that system's inbound consignment (no manual re-entry).
+enum LotSource {
+  MANUAL
+  FOIS
+  SAP
+}
+
 // ─── SAP Integration (Phase 8) ──────────────────────────────────────────────
 
 enum SAPSyncType {
@@ -118,13 +147,70 @@ model User {
   approvedDispatches  Dispatch[]       @relation("DispatchApprovedBy")
   gateValidations     GateValidation[]
   auditLogs           AuditLog[]
+  bayAllocations      BayAllocation[]
+}
+
+/// A warehouse zone. `name` is the label stored on Bay.zone (kept for backward
+/// compatibility); Bay.zoneId is the integrity-checked link. Coordinates and
+/// connectivity are optional — null means "not configured", never "false"/"0".
+model Zone {
+  id            String        @id @default(uuid())
+  name          String        @unique
+  description   String?
+
+  // Optional reference point for the zone (e.g. its centre or entrance).
+  latitude      Float?
+  longitude     Float?
+
+  // Which inbound routes physically reach this zone. Null = not configured, in
+  // which case the recommendation engine applies no restriction and says so.
+  railConnected Boolean?
+  roadConnected Boolean?
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  bays          Bay[]
+  loadingDocks  LoadingDock[]
+}
+
+/// A loading dock where inbound material is unloaded. A dock with no zone is
+/// shared by every zone that has no dock of its own.
+model LoadingDock {
+  id            String         @id @default(uuid())
+  dockCode      String         @unique
+  dockName      String
+
+  zoneId        String?
+  zone          Zone?          @relation(fields: [zoneId], references: [id])
+
+  // Null until surveyed — distances are never computed for a dock without both.
+  latitude      Float?
+  longitude     Float?
+
+  // Arrival modes this dock receives. Empty = not configured (no restriction).
+  arrivalModes  ArrivalMode[]  @default([])
+
+  status        LocationStatus @default(ACTIVE)
+  notes         String?
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  allocations   BayAllocation[]
+
+  @@index([zoneId])
+  @@index([status])
 }
 
 model Bay {
   id          String      @id @default(uuid())
   bayCode     String      @unique
   bayName     String
+  // Zone label (kept for backward compatibility) — always equals zoneRecord.name.
   zone        String
+  zoneId      String?
+  zoneRecord  Zone?       @relation(fields: [zoneId], references: [id])
 
   // Reference center point — maintained for backward compat and map centering
   latitude    Float
@@ -149,6 +235,9 @@ model Bay {
   mappings        MaterialBayMapping[]
   dispatches      Dispatch[]
   gateValidations GateValidation[]
+  allocations     BayAllocation[]
+
+  @@index([zoneId])
 }
 
 model Material {
@@ -190,12 +279,77 @@ model MaterialLot {
 
   receivedDate  DateTime
 
+  // How the lot arrived. Null for lots received before this was captured.
+  arrivalMode        ArrivalMode?
+  arrivalRecordedAt  DateTime?
+
+  // Origin of the record. For FOIS / SAP imports, externalRef is the
+  // consignment's stable id in that system and externalMeta its free-form
+  // details (rake no., RR no., wagons…) kept verbatim until the lead confirms
+  // which fields to model. (source, externalRef) is unique so a consignment
+  // can never be imported twice; manual lots leave externalRef null.
+  source        LotSource     @default(MANUAL)
+  externalRef   String?
+  externalMeta  Json?
+
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
   mappings        MaterialBayMapping[]
   dispatches      Dispatch[]
   gateValidations GateValidation[]
+  allocations     BayAllocation[]
+
+  @@unique([source, externalRef])
+  @@index([arrivalMode])
+}
+
+/// A supervisor's decision to store an incoming lot in a specific bay. The
+/// physical placement is still the MaterialBayMapping created on confirmation;
+/// this row only records the allotment and the recommendation context it was
+/// made with, so the placeholder rule can later be compared with the real
+/// demand model. At most one ALLOCATED row per lot (partial unique index in
+/// the migration).
+model BayAllocation {
+  id                    String           @id @default(uuid())
+
+  lotId                 String
+  bayId                 String
+  loadingDockId         String?
+
+  status                AllocationStatus @default(ALLOCATED)
+
+  // Snapshot of the recommendation at allocation time.
+  arrivalMode           ArrivalMode
+  recommendationRank    Int?             // null = bay was not among the ranked candidates
+  straightLineDistanceM Float?           // null = distance could not be computed
+  demandLevel           String?
+  demandSource          String?          // e.g. STATIC_CONFIG, MANUAL_OVERRIDE
+  method                String?          // recommendation method id
+
+  remarks               String?
+
+  allocatedBy           String
+  allocatedAt           DateTime         @default(now())
+
+  placedMappingId       String?          @unique
+  placedAt              DateTime?
+
+  cancelledAt           DateTime?
+  cancelledBy           String?          // soft reference — the audit log holds the full record
+
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  lot           MaterialLot         @relation(fields: [lotId], references: [id])
+  bay           Bay                 @relation(fields: [bayId], references: [id])
+  loadingDock   LoadingDock?        @relation(fields: [loadingDockId], references: [id])
+  allocator     User                @relation(fields: [allocatedBy], references: [id])
+  placedMapping MaterialBayMapping? @relation(fields: [placedMappingId], references: [id])
+
+  @@index([lotId])
+  @@index([bayId])
+  @@index([status])
 }
 
 model MaterialBayMapping {
@@ -221,6 +375,9 @@ model MaterialBayMapping {
 
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
+
+  // The allocation this placement fulfilled, if it came from one.
+  allocation    BayAllocation?
 
   // Query accelerators for the inventory / history / location lookups.
   @@index([lotId])

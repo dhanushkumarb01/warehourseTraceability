@@ -1,14 +1,10 @@
 /**
  * BayInfoPanel Component
  *
- * Displays detailed information for a selected bay in a card panel.
- * This component is intentionally decoupled from the map — it receives
- * a bay object and a close handler; it knows nothing about Leaflet.
- *
- * Future extensibility:
- *   - Add "Materials" section when Material module is built
- *   - Add "QR Code" when Bay QR module is built
- *   - Add "Dispatch Status" when Dispatch module is built
+ * Floating card describing the selected storage spot (bay): a plain-language
+ * summary first ("A-12 is holding 3 batches"), then the details and the
+ * batches stored there. Decoupled from the map — it receives a bay object
+ * and a close handler; it knows nothing about Leaflet.
  *
  * Props:
  *   bay      {object|null}  — selected bay data, or null when nothing selected
@@ -16,10 +12,22 @@
  */
 
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import StatusBadge from '../StatusBadge/StatusBadge';
+import { IconButton, DetailList, Skeleton, HelpTip } from '../ui';
+import { Icons } from '../ui/icons';
 import { formatCoord } from '../../utils/mapUtils';
 import { fetchBayInventory } from '../../services/mappingService';
 import styles from './BayInfoPanel.module.css';
+
+const fmt = (n) => (typeof n === 'number' ? n.toLocaleString('en-IN') : n);
+
+function summary(bay, lotCount, loading) {
+  if (bay.status === 'INACTIVE') return `${bay.bayCode} is out of use and can’t take material right now.`;
+  if (loading) return `Checking what’s stored in ${bay.bayCode}…`;
+  if (lotCount === 0) return `${bay.bayCode} is empty and ready to take material.`;
+  return `${bay.bayCode} is holding ${lotCount} ${lotCount === 1 ? 'batch' : 'batches'} of material.`;
+}
 
 function BayInfoPanel({ bay, onClose }) {
   const [inventory, setInventory] = useState(null);
@@ -42,91 +50,76 @@ function BayInfoPanel({ bay, onClose }) {
   const storedLots = inventory?.mappings ?? [];
 
   return (
-    <div className={styles.panel} role="region" aria-label="Bay details">
-      {/* Header */}
-      <div className={styles.panelHeader}>
-        <div className={styles.panelHeaderLeft}>
-          <span className={styles.bayCode}>{bay.bayCode}</span>
-          <StatusBadge status={bay.status} />
+    <aside className={styles.panel} role="region" aria-label={`Storage spot ${bay.bayCode}`}>
+      <div className={styles.head}>
+        <div className={styles.headMain}>
+          <span className={styles.eyebrow}>Storage spot <span className={styles.term}>(bay)</span></span>
+          <h3 className={styles.code}>{bay.bayCode}</h3>
+          {bay.bayName && bay.bayName !== bay.bayCode && <p className={styles.name}>{bay.bayName}</p>}
         </div>
-        <button
-          className={styles.closeBtn}
-          onClick={onClose}
-          aria-label="Close panel"
-        >
-          <svg viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-          </svg>
-        </button>
+        <IconButton icon={Icons.close} label="Close details" onClick={onClose} size="sm" variant="outline" tooltip={false} />
       </div>
 
-      {/* Bay name */}
-      <p className={styles.bayName}>{bay.bayName}</p>
-
-      {/* Details grid */}
-      <div className={styles.detailGrid}>
-        <InfoRow label="Zone"      value={bay.zone} />
-        <InfoRow label="Status"    value={<StatusBadge status={bay.status} />} />
-        <InfoRow label="Latitude"  value={formatCoord(bay.latitude)}  mono />
-        <InfoRow label="Longitude" value={formatCoord(bay.longitude)} mono />
+      <div className={styles.summary}>
+        <StatusBadge status={bay.status} />
+        <p>{summary(bay, lotCount, loading)}</p>
       </div>
 
-      <div className={styles.sectionDivider} />
+      <DetailList
+        items={[
+          { label: 'Yard area', value: bay.zone || 'Not set' },
+          { label: 'Batches stored', value: loading ? <Skeleton width={30} height={14} /> : fmt(lotCount) },
+          !loading && inventory && { label: 'Total quantity', value: fmt(inventory.totalQuantity), help: 'All batches in this spot added together, in their own units.' },
+          {
+            label: 'QR label',
+            value: bay.qrStatus === 'GENERATED' ? 'Printed' : 'Not printed yet',
+            help: 'The QR label on the spot lets staff scan it when storing or moving material.',
+          },
+        ]}
+      />
 
-      {/* Warehouse Operations — now inventory-aware */}
-      <div className={styles.futureSection}>
-        <p className={styles.sectionTitle}>Warehouse Operations</p>
-        <div className={styles.futureGrid}>
-          <InfoRow
-            label="QR Status"
-            value={
-              bay.qrStatus === 'GENERATED'
-                ? <span className={styles.qrGeneratedBadge}>Generated</span>
-                : <span className={styles.qrPendingBadge}>Missing</span>
-            }
-          />
-          <InfoRow
-            label="Lots Stored"
-            value={loading ? '…' : <span className={styles.countBadge}>{lotCount}</span>}
-          />
-          {!loading && inventory && (
-            <InfoRow
-              label="Total Quantity"
-              value={`${inventory.totalQuantity.toLocaleString('en-IN')}`}
-            />
-          )}
-        </div>
-
-        {/* Stored lots list */}
-        <div className={styles.invList}>
-          {loading ? (
-            <p className={styles.invEmpty}>Loading inventory…</p>
-          ) : lotCount === 0 ? (
-            <p className={styles.invEmpty}>No materials stored in this bay.</p>
-          ) : (
-            storedLots.map((m) => (
-              <div key={m.id} className={styles.invItem}>
-                <span className={styles.invCode}>{m.lot?.lotCode}</span>
-                <span className={styles.invMaterial}>{m.lot?.material?.materialName || 'Material'}</span>
-                <span className={styles.invQty}>{m.lot?.quantity} {m.lot?.unit}</span>
-              </div>
-            ))
-          )}
-        </div>
+      <div className={styles.section}>
+        <p className={styles.sectionTitle}>What’s stored here</p>
+        {loading ? (
+          <div className={styles.lots}>
+            <Skeleton height={44} radius={12} />
+            <Skeleton height={44} radius={12} />
+          </div>
+        ) : lotCount === 0 ? (
+          <p className={styles.empty}>{Icons.inbox}Nothing stored in this spot.</p>
+        ) : (
+          <ul className={styles.lots}>
+            {storedLots.map((m) => (
+              <li key={m.id} className={styles.lot}>
+                <span className={styles.lotIcon}>{Icons.box}</span>
+                <span className={styles.lotText}>
+                  <span className={styles.lotName}>{m.lot?.material?.materialName || 'Material'}</span>
+                  <span className={styles.lotCode}>Batch {m.lot?.lotCode}</span>
+                </span>
+                <span className={`${styles.lotQty} wt-num`}>{fmt(m.lot?.quantity)} {m.lot?.unit}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
-    </div>
-  );
-}
 
-// ── Sub-component ─────────────────────────────────────────────────────────────
-function InfoRow({ label, value, mono = false }) {
-  return (
-    <div className={styles.infoRow}>
-      <span className={styles.infoLabel}>{label}</span>
-      <span className={`${styles.infoValue} ${mono ? styles.mono : ''}`}>
-        {value}
-      </span>
-    </div>
+      <details className={styles.more}>
+        <summary>
+          Location details
+          <HelpTip>GPS position of this spot, used to draw it on the map.</HelpTip>
+        </summary>
+        <DetailList
+          items={[
+            { label: 'Latitude', value: <span className={styles.mono}>{formatCoord(bay.latitude)}</span> },
+            { label: 'Longitude', value: <span className={styles.mono}>{formatCoord(bay.longitude)}</span> },
+          ]}
+        />
+      </details>
+
+      <Link to="/inbound?tab=storage" className={styles.link}>
+        Manage stored batches {Icons.arrowRight}
+      </Link>
+    </aside>
   );
 }
 

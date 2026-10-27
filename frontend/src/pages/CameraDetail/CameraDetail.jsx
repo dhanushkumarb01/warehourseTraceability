@@ -27,6 +27,8 @@ import ZoneEditor from '../../components/ZoneEditor/ZoneEditor';
 import CameraFormModal from '../../components/CameraFormModal/CameraFormModal';
 import StatusBadge from '../../components/StatusBadge/StatusBadge';
 import Toast from '../../components/Toast/Toast';
+import { Button, Card, ErrorState, Skeleton, Tooltip, Modal, Banner } from '../../components/ui';
+import { Icons } from '../../components/ui/icons';
 import styles from './CameraDetail.module.css';
 
 const STREAM_LABELS = { RTSP: 'RTSP', RTMP: 'RTMP', HTTP: 'HTTP / MJPEG', LOCAL_WEBCAM: 'Local Webcam', UPLOADED_VIDEO: 'Uploaded Video' };
@@ -123,7 +125,7 @@ function CameraDetail() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try { setCam(await fetchCamera(id)); }
-    catch (err) { setError(err.response?.data?.message || err.message || 'Camera not found.'); }
+    catch (err) { setError(err); }
     finally { setLoading(false); }
   }, [id]);
 
@@ -253,11 +255,21 @@ function CameraDetail() {
     finally { setTesting(false); }
   };
 
-  if (loading) return <div className={styles.page}><div className={styles.loading}>Loading camera…</div></div>;
+  if (loading) return (
+    <div className={styles.page}>
+      <Skeleton height={92} radius={20} />
+      <div className={styles.layout}>
+        <Skeleton height={420} radius={20} />
+        <Skeleton height={420} radius={20} />
+      </div>
+    </div>
+  );
   if (error) return (
     <div className={styles.page}>
-      <button className={styles.backBtn} onClick={() => navigate('/surveillance/cameras')}>← Back to Cameras</button>
-      <div className={styles.errorState}><p>{error}</p></div>
+      <Card>
+        <ErrorState title="We couldn’t open this camera" error={error} onRetry={load} />
+        <div className={styles.errorBack}><Button variant="ghost" icon={Icons.arrowLeft} onClick={() => navigate('/surveillance/cameras')}>Back to cameras</Button></div>
+      </Card>
     </div>
   );
 
@@ -265,33 +277,26 @@ function CameraDetail() {
     <div className={styles.page}>
       <Toast message={toast.message} type={toast.type} onClose={clearToast} />
 
-      <button className={styles.backBtn} onClick={() => navigate('/surveillance/cameras')}>
-        <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-        Camera Registry
-      </button>
-
       {/* Header */}
       <div className={styles.header}>
         <div className={styles.headerLeft}>
-          <span className={`${styles.healthDot} ${styles[`h_${cam.health}`]}`} title={`Health: ${cam.health}`} />
+          <span className={`${styles.camIcon} ${styles[`h_${cam.health}`]}`}>{Icons.camera}</span>
           <div>
             <h1 className={styles.title}>{cam.cameraName}</h1>
-            <p className={styles.code}>{cam.cameraCode} · {cam.location}</p>
+            <p className={styles.code}>{cam.cameraCode}{cam.location ? ` · ${cam.location}` : ''}</p>
+            <div className={styles.headerBadges}>
+              <StatusBadge status={cam.health} size="sm" />
+              <StatusBadge status={cam.status} size="sm" />
+            </div>
           </div>
         </div>
         <div className={styles.headerRight}>
-          <StatusBadge status={cam.status} />
-          <StatusBadge status={cam.health} />
           {canManage && (
             <>
-              <button className={styles.secBtn} onClick={handleTest} disabled={testing}>
-                {testing ? <span className={styles.miniSpin} /> : <svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 10-2 0v1.07A6.002 6.002 0 004.07 9H3a1 1 0 000 2h1.07A6.002 6.002 0 009 15.93V17a1 1 0 102 0v-1.07A6.002 6.002 0 0015.93 11H17a1 1 0 100-2h-1.07A6.002 6.002 0 0011 4.07V3zM10 13a3 3 0 110-6 3 3 0 010 6z" /></svg>}
-                Test
-              </button>
-              <button className={styles.primaryBtn} onClick={() => setEditOpen(true)}>
-                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
-                Edit
-              </button>
+              <Tooltip content="Check if the camera is reachable right now" side="bottom">
+                <Button icon={Icons.sync} loading={testing} onClick={handleTest}>Test connection</Button>
+              </Tooltip>
+              <Button variant="primary" icon={Icons.edit} onClick={() => setEditOpen(true)}>Edit camera</Button>
             </>
           )}
         </div>
@@ -635,7 +640,7 @@ function ZoneRow({ label, help, configured, canManage, onConfigure, ctaConfigure
         <div className={styles.zoneRowTitle}>
           <span className={styles.zoneRowLabel}>{label}</span>
           <span className={`${styles.zoneStatus} ${configured ? styles.zoneStatusOk : styles.zoneStatusNo}`}>
-            {configured ? '✓ Configured' : 'Not configured'}
+            {configured ? 'Set up' : 'Not set up yet'}
           </span>
         </div>
         {help && <span className={styles.zoneRowHelp}>{help}</span>}
@@ -649,37 +654,25 @@ function ZoneRow({ label, help, configured, canManage, onConfigure, ctaConfigure
 
 /** Fullscreen, step-based area editor built on the existing ZoneEditor. */
 function ZoneConfigModal({ open, onClose, title, instruction, camera, zones, canManage, onSave, fixedType, defaultName, defaultType }) {
-  if (!open) return null;
   const configured = zones.length > 0;
   return (
-    <div className={styles.zoneModalBackdrop} onClick={onClose}>
-      <div className={styles.zoneModal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.zoneModalHead}>
-          <div>
-            <h3 className={styles.zoneModalTitle}>{title}</h3>
-            <p className={styles.zoneModalSub}>{instruction}</p>
-          </div>
-          <button className={styles.zoneModalClose} onClick={onClose} aria-label="Close">×</button>
-        </div>
-        <div className={styles.zoneModalBody}>
-          <ol className={styles.zoneSteps}>
-            <li><b>1</b> Click around the area to drop points (at least 3).</li>
-            <li><b>2</b> Use <b>Undo</b> / <b>Clear</b> to adjust.</li>
-            <li><b>3</b> Press <b>Save</b> to store the area.</li>
-          </ol>
-          {configured && <div className={styles.zoneDoneBanner}>✓ Boundary created — you can adjust it below or close.</div>}
-          <ZoneEditor
-            camera={camera}
-            zones={zones}
-            canManage={canManage}
-            onSave={async (arr) => { await onSave(arr); onClose(); }}
-            fixedType={fixedType}
-            defaultName={defaultName}
-            defaultType={defaultType}
-          />
-        </div>
-      </div>
-    </div>
+    <Modal isOpen={open} onClose={onClose} size="lg" icon={Icons.layers} title={title} subtitle={instruction}>
+      <ol className={styles.zoneSteps}>
+        <li><b>1</b> Click on the picture to mark the corners of the area (at least 3).</li>
+        <li><b>2</b> Use <b>Undo</b> or <b>Clear</b> to fix mistakes.</li>
+        <li><b>3</b> Press <b>Save area</b> to keep it.</li>
+      </ol>
+      {configured && <Banner tone="success">This area is already set up. You can adjust it below, or close.</Banner>}
+      <ZoneEditor
+        camera={camera}
+        zones={zones}
+        canManage={canManage}
+        onSave={async (arr) => { await onSave(arr); onClose(); }}
+        fixedType={fixedType}
+        defaultName={defaultName}
+        defaultType={defaultType}
+      />
+    </Modal>
   );
 }
 

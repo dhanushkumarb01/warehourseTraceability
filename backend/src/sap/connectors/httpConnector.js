@@ -46,6 +46,17 @@ const request = async (method, path, { params, body } = {}) => {
   }
 };
 
+// The FOIS / SAP inbound record format and access method (API, DB, file) are
+// not confirmed, so there is nothing real to call yet. Fail loudly rather than
+// return an empty list that would read as "nothing to receive".
+const inboundNotConfigured = async () => {
+  const err = new Error(
+    'Inbound consignments are not configured for the live connector: the FOIS / SAP record format and access method have not been confirmed.'
+  );
+  err.code = 'INBOUND_NOT_CONFIGURED';
+  throw err;
+};
+
 module.exports = {
   mode: 'http',
   ping: () => request('GET', '/health'),
@@ -61,4 +72,6 @@ module.exports = {
   validateMaterial: (payload) => request('POST', '/validate/material', { body: payload }),
   validateInventory: (payload) => request('POST', '/validate/inventory', { body: payload }),
   validateDispatch: (payload) => request('POST', '/validate/dispatch', { body: payload }),
+  getInboundConsignments: inboundNotConfigured,
+  getInboundConsignment: inboundNotConfigured,
 };

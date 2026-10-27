@@ -2,23 +2,30 @@
  * ConfirmDialog Component
  *
  * Modal dialog that blocks interaction until the user confirms or cancels.
- * Used for destructive actions such as bay deletion.
+ * Used for destructive actions such as deleting a storage spot. The message
+ * should say in plain words what will happen; `details` can list consequences.
  *
  * Props:
  *   isOpen   {boolean}   — controls visibility
  *   title    {string}    — dialog heading
  *   message  {string}    — body text describing the action
+ *   details  {string[]}  — optional "what happens" bullet list
+ *   tone     {'danger'|'warning'} — danger (default) uses a red confirm button
  *   onConfirm {function} — called when user confirms
  *   onCancel  {function} — called when user dismisses
  *   isLoading {boolean}  — disables confirm button while async op is in flight
  */
 
+import { Modal, Button } from '../ui';
+import { Icons } from '../ui/icons';
 import styles from './ConfirmDialog.module.css';
 
 function ConfirmDialog({
   isOpen,
   title,
   message,
+  details,
+  tone = 'danger',
   onConfirm,
   onCancel,
   isLoading = false,
@@ -27,40 +34,40 @@ function ConfirmDialog({
   confirmLabel = 'Yes, Delete',
   loadingLabel = 'Deleting…',
 }) {
-  if (!isOpen) return null;
-
   const busy = isLoading || isProcessing;
 
   return (
-    <div className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-      <div className={styles.dialog}>
-        <div className={styles.iconWrap}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-          </svg>
-        </div>
-        <h2 id="confirm-title" className={styles.title}>{title}</h2>
-        <p className={styles.message}>{message}</p>
-        <div className={styles.actions}>
-          <button
-            id="confirm-cancel-btn"
-            className={styles.cancelBtn}
-            onClick={onCancel}
-            disabled={busy}
-          >
-            Cancel
-          </button>
-          <button
+    <Modal
+      isOpen={isOpen}
+      onClose={onCancel}
+      busy={busy}
+      size="sm"
+      title={title}
+      icon={tone === 'danger' ? Icons.trash : Icons.warning}
+      tone={tone}
+      footer={(
+        <>
+          <Button id="confirm-cancel-btn" variant="secondary" onClick={onCancel} disabled={busy}>
+            Keep it
+          </Button>
+          <Button
             id="confirm-delete-btn"
-            className={styles.confirmBtn}
+            variant={tone === 'danger' ? 'dangerSolid' : 'primary'}
             onClick={onConfirm}
-            disabled={busy}
+            loading={busy}
           >
             {busy ? loadingLabel : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </>
+      )}
+    >
+      <p className={styles.message}>{message}</p>
+      {details?.length > 0 && (
+        <ul className={styles.details}>
+          {details.map((d) => <li key={d}>{d}</li>)}
+        </ul>
+      )}
+    </Modal>
   );
 }
 

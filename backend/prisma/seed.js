@@ -210,17 +210,23 @@ async function main() {
 
     // Bays: upsert so you can run this seed repeatedly without duplicates
     for (const bay of bays) {
+        // Link each bay to its Zone row (name only — no coordinates or
+        // connectivity are invented; configure those in Bays & Layout).
+        const zoneRecord = await prisma.zone.upsert({
+            where: { name: bay.zone }, update: {}, create: { name: bay.zone },
+        });
         await prisma.bay.upsert({
             where: { bayCode: bay.bayCode },
             update: {
                 bayName: bay.bayName,
                 zone: bay.zone,
+                zoneId: zoneRecord.id,
                 latitude: bay.latitude,
                 longitude: bay.longitude,
                 polygonCoordinates: bay.polygonCoordinates,
                 status: bay.status,
             },
-            create: bay,
+            create: { ...bay, zoneId: zoneRecord.id },
         });
     }
 
@@ -348,6 +354,28 @@ async function main() {
     }
 
     console.log(`✅ Lots seeded/upserted: ${lots.length}`);
+
+    // ── Inbound (MOCK FOIS) ──────────────────────────────────────────────────
+    // Marks mock consignment RR-2610-0398 (src/sap/mock/inboundDataset.js) as
+    // already received, so the demo shows it is excluded from the pending list.
+    await prisma.materialLot.upsert({
+        where: { lotCode: 'FOIS-RR-2610-0398' },
+        update: {},
+        create: {
+            lotCode: 'FOIS-RR-2610-0398',
+            materialId: materialLotMap.get('MAT-002'),
+            quantity: 12500,
+            unit: 'KG',
+            status: 'AVAILABLE',
+            receivedDate: new Date(),
+            arrivalMode: 'RAIL',
+            arrivalRecordedAt: new Date(),
+            source: 'FOIS',
+            externalRef: 'RR-2610-0398',
+            externalMeta: { expectedOrArrivedAt: '2026-10-24T11:45:00.000Z', rakeNo: 'DEMO-RK-7702', rrNo: 'RR-2610-0398' },
+        },
+    });
+    console.log('✅ Mock FOIS consignment RR-2610-0398 marked as received');
     console.log('🎉 Seed complete — bays, materials, and lots are ready.');
 }
 

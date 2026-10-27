@@ -26,6 +26,9 @@
 
 import { useEffect, useState } from 'react';
 import { resolveScan, commitScan } from '../../services/mappingService';
+import { Modal, Field, Button, FormAlert, Stepper, StatusChip } from '../ui';
+import { Icons } from '../ui/icons';
+import { uiStyles } from '../ui/styles';
 import styles from './ScanMappingModal.module.css';
 
 // Build the canonical QR payload for an entity (matches backend qrService).
@@ -105,141 +108,111 @@ function ScanMappingModal({ isOpen, lots = [], bays = [], onClose, onDone }) {
     }
   };
 
+  const step = resolvedLot && resolvedBay ? 2 : resolvedLot ? 1 : 0;
+
   return (
-    <div className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="scan-modal-title">
-      <div className={styles.modal}>
-        <div className={styles.header}>
-          <div className={styles.headerLeft}>
-            <div className={styles.headerIcon}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="7" height="7" rx="1" />
-                <rect x="14" y="3" width="7" height="7" rx="1" />
-                <rect x="3" y="14" width="7" height="7" rx="1" />
-                <path strokeLinecap="round" d="M14 14h3m4 0v.01M17 21h4M14 17v4" />
-              </svg>
-            </div>
-            <div>
-              <h2 id="scan-modal-title" className={styles.title}>Scan to Map</h2>
-              <p className={styles.subtitle}>Scan a Material QR, then a Bay QR, to place or relocate the lot.</p>
-            </div>
+    <Modal
+      isOpen
+      onClose={onClose}
+      busy={isSubmitting}
+      icon={Icons.scan}
+      title="Scan to store"
+      subtitle="Scan the batch’s QR label, then the storage spot’s QR label."
+      footer={(
+        <>
+          <Button onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+          <Button variant="primary" icon={Icons.check} onClick={handleCommit} loading={isSubmitting} disabled={!canCommit}>
+            {willMove ? 'Move batch here' : 'Store batch here'}
+          </Button>
+        </>
+      )}
+    >
+      <div className={styles.stepper}>
+        <Stepper steps={[{ label: 'Batch', hint: 'Scan its label' }, { label: 'Storage spot', hint: 'Scan the spot label' }, { label: 'Confirm' }]} current={step} />
+      </div>
+
+      <div className={uiStyles.formSection}>
+        <FormAlert>{scanError}</FormAlert>
+
+        <section className={`${styles.station} ${resolvedLot ? styles.stationDone : ''}`}>
+          <div className={styles.stationHead}>
+            <span className={styles.stepNum}>{resolvedLot ? Icons.check : 1}</span>
+            <span className={styles.stationTitle}>Scan the batch</span>
+            {resolvedLot && <StatusChip tone="success" size="sm">Found</StatusChip>}
           </div>
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-
-        <div className={styles.body}>
-          {scanError && <div className={styles.errorBanner}>{scanError}</div>}
-
-          {/* Station 1 — Material */}
-          <div className={styles.station}>
-            <div className={styles.stationHead}>
-              <span className={styles.stepNum}>1</span>
-              <span className={styles.stationTitle}>Scan Material QR</span>
-              {resolvedLot && <span className={styles.okPill}>Identified</span>}
-            </div>
-            <select
-              className={styles.select}
-              value=""
-              onChange={(e) => {
-                const l = lots.find((x) => x.id === e.target.value);
-                if (l) identifyMaterial(lotPayload(l));
-              }}
-            >
-              <option value="">Simulate scan — pick a lot…</option>
-              {lots.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.lotCode}{l.material?.materialName ? ` — ${l.material.materialName}` : ''}
-                </option>
-              ))}
-            </select>
-            <textarea
-              className={styles.payloadInput}
-              placeholder="…or paste/scan the Material QR payload"
-              value={materialPayload}
-              onChange={(e) => identifyMaterial(e.target.value)}
-              rows={2}
-            />
-            {resolvedLot && (
-              <div className={styles.preview}>
-                <span className={styles.code}>{resolvedLot.lotCode}</span>
-                <span className={styles.previewMain}>{resolvedLot.material?.materialName || 'Material'}</span>
-                <span className={styles.previewSub}>{resolvedLot.quantity} {resolvedLot.unit}</span>
-                {willMove && (
-                  <span className={styles.movePill}>Currently in {lotActiveMapping.bay?.bayCode}</span>
-                )}
-              </div>
+          <Field label="No scanner? Pick the batch">
+            {(p) => (
+              <select {...p} value="" onChange={(e) => { const l = lots.find((x) => x.id === e.target.value); if (l) identifyMaterial(lotPayload(l)); }}>
+                <option value="">Pick a batch…</option>
+                {lots.map((l) => (
+                  <option key={l.id} value={l.id}>{l.lotCode}{l.material?.materialName ? ` — ${l.material.materialName}` : ''}</option>
+                ))}
+              </select>
             )}
-          </div>
-
-          <div className={styles.connector} aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m0 0l-4-4m4 4l4-4" />
-            </svg>
-          </div>
-
-          {/* Station 2 — Bay */}
-          <div className={styles.station}>
-            <div className={styles.stationHead}>
-              <span className={styles.stepNum}>2</span>
-              <span className={styles.stationTitle}>Scan Bay QR</span>
-              {resolvedBay && <span className={styles.okPill}>Identified</span>}
-            </div>
-            <select
-              className={styles.select}
-              value=""
-              onChange={(e) => {
-                const b = bays.find((x) => x.id === e.target.value);
-                if (b) identifyBay(bayPayload(b));
-              }}
-            >
-              <option value="">Simulate scan — pick a bay…</option>
-              {bays.map((b) => (
-                <option key={b.id} value={b.id} disabled={b.status === 'INACTIVE'}>
-                  {b.bayCode} — {b.bayName} · {b.zone}{b.status === 'INACTIVE' ? ' (inactive)' : ''}
-                </option>
-              ))}
-            </select>
-            <textarea
-              className={styles.payloadInput}
-              placeholder="…or paste/scan the Bay QR payload"
-              value={bayQrPayload}
-              onChange={(e) => identifyBay(e.target.value)}
-              rows={2}
-            />
-            {resolvedBay && (
-              <div className={styles.preview}>
-                <span className={styles.code}>{resolvedBay.bayCode}</span>
-                <span className={styles.previewMain}>{resolvedBay.bayName}</span>
-                <span className={styles.previewSub}>{resolvedBay.zone}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Outcome summary */}
-          {resolvedLot && resolvedBay && (
-            <div className={`${styles.outcome} ${sameBay ? styles.outcomeWarn : ''}`}>
-              {sameBay
-                ? `${resolvedLot.lotCode} is already in ${resolvedBay.bayCode}.`
-                : willMove
-                  ? `Will MOVE ${resolvedLot.lotCode} from ${lotActiveMapping.bay?.bayCode} → ${resolvedBay.bayCode}.`
-                  : `Will MAP ${resolvedLot.lotCode} → ${resolvedBay.bayCode}.`}
+          </Field>
+          <Field label="Batch QR label contents" optional>
+            {(p) => <textarea {...p} className={`${p.className} ${styles.payload}`} placeholder="Scan or paste the batch’s QR label" value={materialPayload} onChange={(e) => identifyMaterial(e.target.value)} rows={2} />}
+          </Field>
+          {resolvedLot && (
+            <div className={styles.preview}>
+              <span className={styles.previewIcon}>{Icons.box}</span>
+              <span className={styles.previewText}>
+                <span className={uiStyles.strong}>{resolvedLot.material?.materialName || 'Material'}</span>
+                <span className={uiStyles.sub}><span className={uiStyles.mono}>{resolvedLot.lotCode}</span> · {resolvedLot.quantity} {resolvedLot.unit}</span>
+              </span>
+              {willMove && <StatusChip tone="info" icon={Icons.pin} size="sm">Now in {lotActiveMapping.bay?.bayCode}</StatusChip>}
             </div>
           )}
+        </section>
 
-          {submitError && <div className={styles.errorBanner}>{submitError}</div>}
-
-          <div className={styles.footer}>
-            <button className={styles.cancelBtn} onClick={onClose} disabled={isSubmitting}>Cancel</button>
-            <button className={styles.submitBtn} onClick={handleCommit} disabled={!canCommit}>
-              {isSubmitting ? 'Saving…' : willMove ? 'Confirm Move' : 'Confirm Mapping'}
-            </button>
+        <section className={`${styles.station} ${resolvedBay ? styles.stationDone : ''}`}>
+          <div className={styles.stationHead}>
+            <span className={styles.stepNum}>{resolvedBay ? Icons.check : 2}</span>
+            <span className={styles.stationTitle}>Scan the storage spot</span>
+            {resolvedBay && <StatusChip tone="success" size="sm">Found</StatusChip>}
           </div>
-        </div>
+          <Field label="No scanner? Pick the spot">
+            {(p) => (
+              <select {...p} value="" onChange={(e) => { const b = bays.find((x) => x.id === e.target.value); if (b) identifyBay(bayPayload(b)); }}>
+                <option value="">Pick a storage spot…</option>
+                {bays.map((b) => (
+                  <option key={b.id} value={b.id} disabled={b.status === 'INACTIVE'}>
+                    {b.bayCode} — {b.bayName} · {b.zone}{b.status === 'INACTIVE' ? ' (out of use)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+          <Field label="Spot QR label contents" optional>
+            {(p) => <textarea {...p} className={`${p.className} ${styles.payload}`} placeholder="Scan or paste the storage spot’s QR label" value={bayQrPayload} onChange={(e) => identifyBay(e.target.value)} rows={2} />}
+          </Field>
+          {resolvedBay && (
+            <div className={styles.preview}>
+              <span className={styles.previewIcon}>{Icons.pin}</span>
+              <span className={styles.previewText}>
+                <span className={uiStyles.strong}>{resolvedBay.bayCode}</span>
+                <span className={uiStyles.sub}>{resolvedBay.bayName} · {resolvedBay.zone}</span>
+              </span>
+            </div>
+          )}
+        </section>
+
+        {resolvedLot && resolvedBay && (
+          <div className={`${styles.outcome} ${sameBay ? styles.outcomeWarn : ''}`} role="status">
+            {sameBay ? Icons.warning : Icons.info}
+            <span>
+              {sameBay
+                ? `${resolvedLot.lotCode} is already in ${resolvedBay.bayCode}. Pick a different spot to move it.`
+                : willMove
+                  ? `This will move ${resolvedLot.lotCode} from ${lotActiveMapping.bay?.bayCode} to ${resolvedBay.bayCode}.`
+                  : `This will store ${resolvedLot.lotCode} in ${resolvedBay.bayCode}.`}
+            </span>
+          </div>
+        )}
+
+        <FormAlert>{submitError}</FormAlert>
       </div>
-    </div>
+    </Modal>
   );
 }
 

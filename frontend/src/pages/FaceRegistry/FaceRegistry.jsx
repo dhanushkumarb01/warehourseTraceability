@@ -19,6 +19,12 @@ import { GROUPS } from '../../config/roles';
 import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog';
 import StatusBadge from '../../components/StatusBadge/StatusBadge';
 import Toast from '../../components/Toast/Toast';
+import {
+  PageHeader, StatCard, Button, IconButton, SearchInput, EmptyState, ErrorState, Skeleton, Menu, Modal, Drawer, Field,
+  SegmentedControl, Banner, StatusChip,
+} from '../../components/ui';
+import { Icons } from '../../components/ui/icons';
+import { uiStyles } from '../../components/ui/styles';
 import styles from './FaceRegistry.module.css';
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—');
@@ -51,13 +57,14 @@ function FaceRegistry() {
   const clearToast = useCallback(() => setToast({ message: '', type: 'info' }), []);
 
   const searchTimer = useRef(null);
+  const [searchText, setSearchText] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
       setData(await fetchEmployees({ page, pageSize: 12, search: search || undefined, status: status || undefined }));
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Failed to load employees.');
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -71,8 +78,8 @@ function FaceRegistry() {
   useEffect(() => { loadSummary(); }, [loadSummary]);
   useEffect(() => { setPage(1); }, [search, status]);
 
-  const onSearchChange = (e) => {
-    const v = e.target.value;
+  const onSearchChange = (v) => {
+    setSearchText(v);
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => setSearch(v), 300);
   };
@@ -85,10 +92,10 @@ function FaceRegistry() {
   const handleSubmit = async (payload) => {
     setSubmitting(true);
     try {
-      if (formMode === 'edit') { await updateEmployee(selected.id, payload); showToast('Employee updated.', 'success'); }
+      if (formMode === 'edit') { await updateEmployee(selected.id, payload); showToast(`${payload.name} updated.`, 'success'); }
       else {
         const emp = await createEmployee(payload);
-        showToast('Employee registered. Enrol a face to enable recognition.', 'success');
+        showToast(`${emp.name} added. Now add a photo of their face so the cameras recognise them.`, 'success');
         setEnrollFor(emp); // jump straight into enrolment
       }
       setFormOpen(false); refresh();
@@ -101,7 +108,7 @@ function FaceRegistry() {
   const handleDelete = async () => {
     if (!confirm) return;
     setDeleting(true);
-    try { await deleteEmployee(confirm.id); showToast(`Employee "${confirm.name}" deleted.`, 'success'); setConfirm(null); refresh(); }
+    try { await deleteEmployee(confirm.id); showToast(`${confirm.name} removed from the registry.`, 'success'); setConfirm(null); refresh(); }
     catch (err) { showToast(err.response?.data?.message || err.message || 'Delete failed.', 'error'); }
     finally { setDeleting(false); }
   };
@@ -112,117 +119,107 @@ function FaceRegistry() {
     <div className={styles.page}>
       <Toast message={toast.message} type={toast.type} onClose={clearToast} />
 
-      <div className={styles.pageHeader}>
-        <div className={styles.pageHeaderLeft}>
-          <div className={styles.pageIcon}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M12 14a4 4 0 100-8 4 4 0 000 8z" /><path strokeLinecap="round" strokeLinejoin="round" d="M4 8V6a2 2 0 012-2h2M16 4h2a2 2 0 012 2v2M20 16v2a2 2 0 01-2 2h-2M8 20H6a2 2 0 01-2-2v-2" /></svg>
-          </div>
-          <div>
-            <h1 className={styles.pageTitle}>Face Registry</h1>
-            <p className={styles.pageBreadcrumb}>Surveillance &rsaquo; Employee Face Registry</p>
-          </div>
-        </div>
-        {canManage && (
-          <button className={styles.primaryBtn} onClick={openCreate}>
-            <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
-            Register Employee
-          </button>
+      <PageHeader
+        icon={Icons.face}
+        title="Face registry"
+        term="Face registry"
+        subtitle="Staff whose faces the cameras know. Anyone not listed here shows up as an unknown person."
+        actions={(
+          <>
+            <IconButton icon={Icons.refresh} label="Refresh" variant="outline" onClick={refresh} disabled={loading} />
+            {canManage && <Button variant="primary" icon={Icons.plus} onClick={openCreate}>Add employee</Button>}
+          </>
         )}
-      </div>
+      />
 
-      {summary && (
-        <div className={styles.statsStrip}>
-          <Stat label="Employees" value={summary.employees} color="#2563eb" bg="#eff6ff" />
-          <Stat label="Active" value={summary.active} color="#16a34a" bg="#f0fdf4" />
-          <Stat label="Inactive" value={summary.inactive} color="#64748b" bg="#f8fafc" />
-          <Stat label="Enrolled Faces" value={summary.enrolledFaces} color="#7c3aed" bg="#f5f3ff" />
-        </div>
-      )}
+      <section className={styles.kpis} aria-label="Registry summary">
+        <StatCard icon={Icons.users} label="Employees" value={summary?.employees ?? null} loading={!summary} tone="info" hint="In the registry" />
+        <StatCard icon={Icons.checkCircle} label="Active" value={summary?.active ?? null} loading={!summary} tone="success" hint="Allowed on site" onClick={() => setStatus(status === 'ACTIVE' ? '' : 'ACTIVE')} />
+        <StatCard icon={Icons.ban} label="Inactive" value={summary?.inactive ?? null} loading={!summary} tone="neutral" hint="No longer recognised as staff" onClick={() => setStatus(status === 'INACTIVE' ? '' : 'INACTIVE')} />
+        <StatCard icon={Icons.face} label="Face photos added" value={summary?.enrolledFaces ?? null} loading={!summary} tone="brand"
+          hint="More photos per person means better recognition" help="Only a numeric face signature is stored, never the photo itself." />
+      </section>
 
       <div className={styles.toolbar}>
-        <div className={styles.searchBox}>
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" /></svg>
-          <input type="text" placeholder="Search name, employee ID, department, designation…" onChange={onSearchChange} className={styles.searchInput} />
-        </div>
-        <div className={styles.filters}>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className={styles.filterSelect} aria-label="Filter by status">
-            <option value="">All statuses</option>
-            <option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option>
-          </select>
-        </div>
+        <SearchInput className={styles.searchBox} value={searchText} onChange={onSearchChange} placeholder="Search name, employee ID, department or job" />
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className={`${uiStyles.input} ${styles.filterSelect}`} aria-label="Filter by status">
+          <option value="">Anyone</option>
+          <option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option>
+        </select>
       </div>
 
-      {loading && <div className={styles.grid}>{[...Array(6)].map((_, i) => <div key={i} className={styles.skeleton} />)}</div>}
+      {loading && <div className={styles.grid}>{[...Array(6)].map((_, i) => <Skeleton key={i} height={196} radius={20} />)}</div>}
 
       {!loading && error && (
-        <div className={styles.errorState}>
-          <p>{error}</p>
-          <button className={styles.retryBtn} onClick={load}>Retry</button>
-        </div>
+        <div className={uiStyles.card}><ErrorState title="We couldn’t load the registry" error={error} onRetry={load} /></div>
       )}
 
       {!loading && !error && data.items.length === 0 && (
-        <div className={styles.emptyState}>
-          <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="32" cy="24" r="10" /><path strokeLinecap="round" strokeLinejoin="round" d="M14 52c0-9.94 8.06-18 18-18s18 8.06 18 18" /></svg>
-          <p className={styles.emptyTitle}>{hasFilters ? 'No employees match your filters' : 'No employees registered yet'}</p>
-          <p className={styles.emptySubtitle}>{hasFilters ? 'Try clearing the search or filters.' : 'Register employees and enrol their faces so the cameras can tell staff apart from unknown people.'}</p>
-          {!hasFilters && canManage && <button className={styles.primaryBtn} onClick={openCreate}>Register First Employee</button>}
+        <div className={uiStyles.card}>
+          <EmptyState
+            icon={hasFilters ? Icons.search : Icons.face}
+            title={hasFilters ? 'Nobody matches this search' : 'No employees added yet'}
+            message={hasFilters ? 'Try a different name or ID, or clear the filter.' : 'Add employees and a photo of their face so the cameras can tell staff from visitors.'}
+            action={hasFilters
+              ? <Button onClick={() => { setStatus(''); onSearchChange(''); }}>Clear search</Button>
+              : canManage && <Button variant="primary" icon={Icons.plus} onClick={openCreate}>Add employee</Button>}
+          />
         </div>
       )}
 
       {!loading && !error && data.items.length > 0 && (
         <>
           <div className={styles.grid}>
-            {data.items.map((emp) => (
-              <div key={emp.id} className={styles.card}>
-                <div className={styles.cardTop}>
-                  <span className={styles.avatar}>{initials(emp.name)}</span>
-                  <div className={styles.cardTitleWrap}>
-                    <h3 className={styles.cardName}>{emp.name}</h3>
-                    <span className={styles.cardCode}>{emp.employeeCode}</span>
+            {data.items.map((emp) => {
+              const enrolled = emp.faceCount > 0;
+              return (
+                <article key={emp.id} className={`${styles.card} ${enrolled ? '' : styles.cardNoFace}`}>
+                  <div className={styles.cardTop}>
+                    <span className={styles.avatar} aria-hidden="true">{initials(emp.name)}</span>
+                    <div className={styles.cardTitleWrap}>
+                      <h3 className={styles.cardName}>{emp.name}</h3>
+                      <span className={styles.cardCode}>{emp.employeeCode}</span>
+                    </div>
+                    {canManage && (
+                      <Menu
+                        label={`More actions for ${emp.name}`}
+                        items={[
+                          { label: 'Edit details', icon: Icons.edit, onClick: () => openEdit(emp) },
+                          { label: 'Remove employee', icon: Icons.trash, onClick: () => setConfirm(emp), danger: true },
+                        ]}
+                      />
+                    )}
                   </div>
-                  <StatusBadge status={emp.status} />
-                </div>
 
-                <div className={styles.cardMeta}>
-                  {emp.department && <Meta icon="dept" label={emp.department} />}
-                  {emp.designation && <Meta icon="role" label={emp.designation} />}
-                </div>
+                  <div className={styles.cardMeta}>
+                    {emp.department && <span className={styles.meta}>{Icons.boxes}{emp.department}</span>}
+                    {emp.designation && <span className={styles.meta}>{Icons.user}{emp.designation}</span>}
+                  </div>
 
-                <div className={styles.cardChecked}>
-                  <span className={emp.faceCount > 0 ? styles.enrolledOk : styles.enrolledNone}>
-                    <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" /></svg>
-                    {emp.faceCount || 0} face{emp.faceCount === 1 ? '' : 's'} enrolled
-                  </span>
-                  <strong className={styles.regDate}>{fmtDate(emp.createdAt)}</strong>
-                </div>
+                  <div className={styles.cardBadges}>
+                    <StatusBadge status={emp.status} size="sm" />
+                    {enrolled
+                      ? <StatusChip tone="success" icon={Icons.face} size="sm">{emp.faceCount} face {emp.faceCount === 1 ? 'photo' : 'photos'}</StatusChip>
+                      : <StatusChip tone="warning" icon={Icons.warning} size="sm" title="Without a face photo, this person shows up as unknown on camera">No face photo yet</StatusChip>}
+                  </div>
 
-                <div className={styles.cardActions}>
-                  <button className={styles.enrollBtn} onClick={() => setEnrollFor(emp)}>
-                    <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 5a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 3H8.828a2 2 0 00-1.414.586L6.293 4.707A1 1 0 015.586 5H4zm6 9a3 3 0 100-6 3 3 0 000 6z" /></svg>
-                    Manage Faces
-                  </button>
-                  {canManage && (
-                    <>
-                      <button className={styles.actBtn} onClick={() => openEdit(emp)} title="Edit">
-                        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
-                      </button>
-                      <button className={`${styles.actBtn} ${styles.del}`} onClick={() => setConfirm(emp)} title="Delete">
-                        <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
+                  <div className={styles.cardFoot}>
+                    <span className={styles.regDate}>Added {fmtDate(emp.createdAt)}</span>
+                    <Button size="sm" variant={enrolled ? 'secondary' : 'primary'} icon={Icons.camera} onClick={() => setEnrollFor(emp)}>
+                      {enrolled ? 'Face photos' : 'Add face photo'}
+                    </Button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
 
           <div className={styles.pagination}>
             <span className={styles.pageInfo}>Showing {(data.page - 1) * data.pageSize + 1}–{Math.min(data.page * data.pageSize, data.total)} of {data.total}</span>
             <div className={styles.pageBtns}>
-              <button className={styles.pageBtn} disabled={data.page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button>
-              <span className={styles.pageNum}>Page {data.page} / {data.totalPages}</span>
-              <button className={styles.pageBtn} disabled={data.page >= data.totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
+              <Button size="sm" icon={Icons.chevronLeft} disabled={data.page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+              <span className={styles.pageNum}>Page {data.page} of {data.totalPages}</span>
+              <Button size="sm" iconRight={Icons.chevronRight} disabled={data.page >= data.totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
             </div>
           </div>
         </>
@@ -250,8 +247,11 @@ function FaceRegistry() {
 
       <ConfirmDialog
         isOpen={Boolean(confirm)}
-        title="Delete Employee"
-        message={`Permanently delete "${confirm?.employeeCode} – ${confirm?.name}" and all enrolled faces? This cannot be undone.`}
+        title="Remove this employee?"
+        message={`${confirm?.name} (${confirm?.employeeCode}) will be removed from the registry, together with all their face photos.`}
+        details={['Cameras will show them as an unknown person from now on.', 'This can’t be undone.']}
+        confirmLabel="Remove employee"
+        loadingLabel="Removing…"
         onConfirm={handleDelete}
         onCancel={() => { if (!deleting) setConfirm(null); }}
         isLoading={deleting}
@@ -260,7 +260,7 @@ function FaceRegistry() {
   );
 }
 
-/* ── Register / edit employee modal ──────────────────────────────────────── */
+/* ── Add / edit employee modal ── */
 function EmployeeFormModal({ mode, initialData, isLoading, onClose, onSubmit }) {
   const [form, setForm] = useState({
     employeeCode: initialData?.employeeCode || '',
@@ -269,9 +269,13 @@ function EmployeeFormModal({ mode, initialData, isLoading, onClose, onSubmit }) 
     designation: initialData?.designation || '',
     status: initialData?.status || 'ACTIVE',
   });
+  const [touched, setTouched] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const valid = form.employeeCode.trim() && form.name.trim();
   const submit = (e) => {
     e.preventDefault();
+    setTouched(true);
+    if (!valid) return;
     onSubmit({
       employeeCode: form.employeeCode.trim(),
       name: form.name.trim(),
@@ -280,49 +284,46 @@ function EmployeeFormModal({ mode, initialData, isLoading, onClose, onSubmit }) 
       status: form.status,
     });
   };
-  const valid = form.employeeCode.trim() && form.name.trim();
 
   return (
-    <div className={styles.modalBackdrop} onClick={() => !isLoading && onClose()}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalHead}>
-          <h2>{mode === 'edit' ? 'Edit Employee' : 'Register Employee'}</h2>
-          <button className={styles.modalClose} onClick={onClose} disabled={isLoading}>×</button>
-        </div>
-        <form className={styles.modalBody} onSubmit={submit}>
-          <div className={styles.formGrid}>
-            <label className={styles.field}>
-              <span>Employee ID <em>*</em></span>
-              <input value={form.employeeCode} onChange={(e) => set('employeeCode', e.target.value)} placeholder="e.g. EMP-00123" maxLength={64} required />
-            </label>
-            <label className={styles.field}>
-              <span>Employee Name <em>*</em></span>
-              <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Full name" maxLength={120} required />
-            </label>
-            <label className={styles.field}>
-              <span>Department</span>
-              <input value={form.department} onChange={(e) => set('department', e.target.value)} placeholder="Optional" maxLength={120} />
-            </label>
-            <label className={styles.field}>
-              <span>Designation</span>
-              <input value={form.designation} onChange={(e) => set('designation', e.target.value)} placeholder="Optional" maxLength={120} />
-            </label>
-            <label className={styles.field}>
-              <span>Status</span>
-              <select value={form.status} onChange={(e) => set('status', e.target.value)}>
-                <option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option>
-              </select>
-            </label>
-          </div>
-          <div className={styles.modalActions}>
-            <button type="button" className={styles.secondaryBtn} onClick={onClose} disabled={isLoading}>Cancel</button>
-            <button type="submit" className={styles.primaryBtn} disabled={!valid || isLoading}>
-              {isLoading ? 'Saving…' : mode === 'edit' ? 'Save Changes' : 'Register & Enrol Face'}
-            </button>
-          </div>
-        </form>
+    <Modal
+      isOpen
+      onClose={onClose}
+      busy={isLoading}
+      icon={Icons.user}
+      title={mode === 'edit' ? `Edit ${initialData?.name}` : 'Add an employee'}
+      subtitle={mode === 'edit' ? undefined : 'After saving, you’ll add a photo of their face.'}
+      as="form"
+      onSubmit={submit}
+      footer={(
+        <>
+          <Button onClick={onClose} disabled={isLoading}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={isLoading}>{mode === 'edit' ? 'Save changes' : 'Save and add face photo'}</Button>
+        </>
+      )}
+    >
+      <div className={uiStyles.formGrid}>
+        <Field label="Employee ID" required error={touched && !form.employeeCode.trim() ? 'Enter the employee ID from their badge.' : undefined}>
+          {(p) => <input {...p} value={form.employeeCode} onChange={(e) => set('employeeCode', e.target.value)} placeholder="e.g. EMP-00123" maxLength={64} />}
+        </Field>
+        <Field label="Full name" required error={touched && !form.name.trim() ? 'Enter their full name.' : undefined}>
+          {(p) => <input {...p} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="As on their ID card" maxLength={120} />}
+        </Field>
+        <Field label="Department" optional>
+          {(p) => <input {...p} value={form.department} onChange={(e) => set('department', e.target.value)} placeholder="e.g. Logistics" maxLength={120} />}
+        </Field>
+        <Field label="Job title" optional>
+          {(p) => <input {...p} value={form.designation} onChange={(e) => set('designation', e.target.value)} placeholder="e.g. Crane operator" maxLength={120} />}
+        </Field>
+        <Field label="Status" hint="Inactive staff are treated as unknown by the cameras." className={uiStyles.span2}>
+          {(p) => (
+            <select {...p} value={form.status} onChange={(e) => set('status', e.target.value)}>
+              <option value="ACTIVE">Active — works here</option><option value="INACTIVE">Inactive — left or suspended</option>
+            </select>
+          )}
+        </Field>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -388,7 +389,7 @@ function FacesDrawer({ employee, canManage, onClose, onChanged, showToast }) {
     setBusy(true);
     try {
       const res = await enrollFace(employee.id, preview.dataUrl);
-      showToast(`Face enrolled (quality ${(res.face?.quality ?? 0).toFixed?.(2) ?? '—'}).`, 'success');
+      showToast(`Face photo added (quality ${(res.face?.quality ?? 0).toFixed?.(2) ?? '—'}).`, 'success');
       setPreview(null);
       await loadFaces();
       onChanged();
@@ -399,118 +400,96 @@ function FacesDrawer({ employee, canManage, onClose, onChanged, showToast }) {
 
   const removeFace = async (faceId) => {
     setBusy(true);
-    try { await deleteFace(employee.id, faceId); await loadFaces(); onChanged(); showToast('Face removed.', 'success'); }
+    try { await deleteFace(employee.id, faceId); await loadFaces(); onChanged(); showToast('Face signature removed.', 'success'); }
     catch (err) { showToast(err.response?.data?.message || err.message || 'Could not remove face.', 'error'); }
     finally { setBusy(false); }
   };
 
   return (
-    <div className={styles.drawerBackdrop} onClick={onClose}>
-      <aside className={styles.drawer} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.drawerHead}>
-          <div>
-            <h2>{employee.name}</h2>
-            <p className={styles.drawerSub}>{employee.employeeCode}{employee.department ? ` · ${employee.department}` : ''}</p>
-          </div>
-          <button className={styles.modalClose} onClick={onClose}>×</button>
-        </div>
+    <Drawer
+      isOpen
+      onClose={onClose}
+      width={480}
+      icon={Icons.face}
+      title={employee.name}
+      subtitle={`${employee.employeeCode}${employee.department ? ` · ${employee.department}` : ''}`}
+    >
+      <div className={styles.drawerBody}>
+        <Banner tone="info">
+          Only a numeric face signature is stored — the photo itself is never saved. Add 2–3 photos from different angles and lighting for the best recognition.
+        </Banner>
 
-        <div className={styles.drawerBody}>
-          <p className={styles.privacyNote}>
-            Only a numeric face signature is stored — the photos below are never saved. Enrol several photos (different angles / lighting) for the most reliable recognition.
-          </p>
+        {canManage && (
+          <div className={styles.enrollCard}>
+            <SegmentedControl
+              block
+              ariaLabel="How to add a photo"
+              value={mode}
+              onChange={(v) => { setMode(v); setPreview(null); }}
+              options={[
+                { value: 'upload', label: 'Upload a photo', icon: Icons.upload },
+                { value: 'webcam', label: 'Use webcam', icon: Icons.camera },
+              ]}
+            />
 
-          {canManage && (
-            <div className={styles.enrollCard}>
-              <div className={styles.modeTabs}>
-                <button className={`${styles.modeTab} ${mode === 'upload' ? styles.modeTabActive : ''}`} onClick={() => { setMode('upload'); setPreview(null); }}>Upload Image</button>
-                <button className={`${styles.modeTab} ${mode === 'webcam' ? styles.modeTabActive : ''}`} onClick={() => { setMode('webcam'); setPreview(null); }}>Use Webcam</button>
+            {!preview && mode === 'upload' && (
+              <button type="button" className={styles.uploadZone} onClick={() => fileRef.current?.click()}>
+                {Icons.upload}
+                <strong>Choose a face photo</strong>
+                <span>JPG or PNG · one clear, front-facing face · up to 8 MB</span>
+                <input ref={fileRef} type="file" accept="image/*" hidden onChange={onFile} />
+              </button>
+            )}
+
+            {!preview && mode === 'webcam' && (
+              <div className={styles.webcamZone}>
+                {camError ? <p className={styles.camError}>{Icons.error}{camError}</p> : (
+                  <>
+                    <video ref={videoRef} className={styles.webcam} playsInline muted />
+                    <Button variant="primary" icon={Icons.camera} onClick={captureFromWebcam}>Take photo</Button>
+                  </>
+                )}
               </div>
+            )}
 
-              {!preview && mode === 'upload' && (
-                <div className={styles.uploadZone} onClick={() => fileRef.current?.click()}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.9A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 13l3-3m0 0l3 3m-3-3v9" /></svg>
-                  <p>Click to choose a face photo</p>
-                  <span>JPG or PNG, one clear front-facing face, up to 8 MB</span>
-                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={onFile} />
+            {preview && (
+              <div className={styles.previewZone}>
+                <img src={preview.dataUrl} alt="Face to add" className={styles.previewImg} />
+                <div className={styles.previewActions}>
+                  <Button onClick={() => setPreview(null)} disabled={busy}>Try another</Button>
+                  <Button variant="primary" icon={Icons.check} onClick={submitEnroll} loading={busy}>Use this photo</Button>
                 </div>
-              )}
-
-              {!preview && mode === 'webcam' && (
-                <div className={styles.webcamZone}>
-                  {camError ? <p className={styles.camError}>{camError}</p> : (
-                    <>
-                      <video ref={videoRef} className={styles.webcam} playsInline muted />
-                      <button className={styles.captureBtn} onClick={captureFromWebcam}>Capture</button>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {preview && (
-                <div className={styles.previewZone}>
-                  <img src={preview.dataUrl} alt="Face to enrol" className={styles.previewImg} />
-                  <div className={styles.previewActions}>
-                    <button className={styles.secondaryBtn} onClick={() => setPreview(null)} disabled={busy}>Retake</button>
-                    <button className={styles.primaryBtn} onClick={submitEnroll} disabled={busy}>{busy ? 'Enrolling…' : 'Enrol This Face'}</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className={styles.facesHead}>
-            <h3>Enrolled faces</h3>
-            <span className={styles.facesCount}>{faces ? faces.length : '…'}</span>
+              </div>
+            )}
           </div>
+        )}
 
-          {faces && faces.length === 0 && <p className={styles.muted}>No faces enrolled yet. This employee will be treated as an unknown person until at least one face is enrolled.</p>}
-
-          {faces && faces.length > 0 && (
-            <ul className={styles.faceList}>
-              {faces.map((f) => (
-                <li key={f.id} className={styles.faceRow}>
-                  <span className={styles.faceSig}>
-                    <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" opacity="0" /><path d="M10 3.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13z" opacity="0.15" /><path fillRule="evenodd" d="M10 5a3 3 0 100 6 3 3 0 000-6zm-5 9a5 5 0 0110 0v.5a.5.5 0 01-.5.5h-9a.5.5 0 01-.5-.5V14z" clipRule="evenodd" /></svg>
-                  </span>
-                  <div className={styles.faceInfo}>
-                    <strong>Signature #{f.id.slice(0, 8)}</strong>
-                    <span>{f.model} · quality {f.quality != null ? Number(f.quality).toFixed(2) : '—'} · {fmtDate(f.createdAt)}</span>
-                  </div>
-                  {canManage && (
-                    <button className={`${styles.actBtn} ${styles.del}`} onClick={() => removeFace(f.id)} disabled={busy} title="Remove face">
-                      <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
+        <div className={styles.facesHead}>
+          <h3>Saved face signatures</h3>
+          <span className={styles.facesCount}>{faces ? faces.length : '…'}</span>
         </div>
-      </aside>
-    </div>
-  );
-}
 
-function Stat({ label, value, color, bg }) {
-  return (
-    <div className={styles.statCard} style={{ '--stat-color': color, '--stat-bg': bg }}>
-      <span className={styles.statValue}>{value}</span>
-      <span className={styles.statLabel}>{label}</span>
-    </div>
-  );
-}
+        {!faces && <Skeleton height={56} radius={12} />}
+        {faces && faces.length === 0 && (
+          <EmptyState icon={Icons.face} title="No face photos yet" message="Until one is added, cameras will show this person as unknown." />
+        )}
 
-function Meta({ icon, label }) {
-  const icons = {
-    dept: 'M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z',
-    role: 'M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z',
-  };
-  return (
-    <span className={styles.meta} title={label}>
-      <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d={icons[icon]} clipRule="evenodd" /></svg>
-      {label}
-    </span>
+        {faces && faces.length > 0 && (
+          <ul className={styles.faceList}>
+            {faces.map((f) => (
+              <li key={f.id} className={styles.faceRow}>
+                <span className={styles.faceSig}>{Icons.face}</span>
+                <div className={styles.faceInfo}>
+                  <strong>Signature #{f.id.slice(0, 8)}</strong>
+                  <span>Quality {f.quality != null ? Number(f.quality).toFixed(2) : '—'} · added {fmtDate(f.createdAt)}</span>
+                </div>
+                {canManage && <IconButton icon={Icons.trash} label="Remove this face signature" size="sm" onClick={() => removeFace(f.id)} disabled={busy} />}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Drawer>
   );
 }
 

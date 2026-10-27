@@ -18,6 +18,7 @@
 
 const env = require('../../config/env');
 const ds = require('./sapDataset');
+const inboundDs = require('./inboundDataset');
 
 // In-memory, mutable working copies (createDelivery appends here).
 const state = {
@@ -178,6 +179,20 @@ const validateDispatch = async ({ deliveryNumber = null, materialNumber, batchNu
   };
 };
 
+// ─── Inbound consignments (MOCK FOIS / SAP rail records) ─────────────────────
+const listInboundConsignments = async ({ source } = {}) => {
+  await transport();
+  return inboundDs.consignments
+    .filter((c) => !source || c.source === source)
+    .map((c) => ({ ...c, meta: c.meta ? { ...c.meta } : null }));
+};
+
+const getInboundConsignment = async (source, externalRef) => {
+  await transport();
+  const found = inboundDs.consignments.find((c) => c.source === source && c.externalRef === externalRef);
+  return found ? { ...found, meta: found.meta ? { ...found.meta } : null } : null;
+};
+
 const ping = async () => { await transport(); return { connected: true, system: 'MOCK-SAP-S4', plant: ds.PLANT, time: new Date().toISOString() }; };
 
 module.exports = {
@@ -187,4 +202,5 @@ module.exports = {
   getInventory, listInventory,
   getDelivery, listDeliveries, createDelivery,
   validateMaterial, validateInventory, validateDispatch,
+  listInboundConsignments, getInboundConsignment,
 };
