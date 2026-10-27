@@ -1,0 +1,205 @@
+/* Inbound & Storage — page-specific layout. Generic controls come from
+   components/ui; this file only holds what is unique to this workflow. */
+
+.page { display: flex; flex-direction: column; gap: 20px; }
+.page > header { margin-bottom: 4px; }
+@media (max-width: 768px) { .page { } }
+
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ── Stage overview ───────────────────────────────────────────────────────── */
+.stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1100px) { .stages { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .stages { grid-template-columns: 1fr; } }
+
+.stage {
+  --accent: var(--c-text-soft);
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px 18px; text-align: left;
+  background: var(--c-surface-glass); border: 1px solid var(--c-border); border-radius: var(--r-xl);
+  box-shadow: var(--sh-card); backdrop-filter: blur(16px); cursor: pointer; overflow: hidden;
+  transition: border-color var(--t-fast), transform var(--t-fast);
+}
+.stage::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 2px; background: linear-gradient(90deg, var(--accent), transparent 70%); }
+.stage:hover { border-color: var(--c-border-strong); transform: translateY(-1px); }
+.stageActive, .stageActive:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--sh-card); }
+.stage_neutral { --accent: var(--c-text-soft); }
+.stage_warning { --accent: var(--c-warning); }
+.stage_info { --accent: var(--c-info); }
+.stage_success { --accent: var(--c-success); }
+
+.stageStep {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--fs-xs); font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: 0.06em;
+}
+.stageStep::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.stageText { display: flex; flex-direction: column; min-width: 0; order: 3; }
+.stageLabel { font-size: var(--fs-md); font-weight: 650; color: var(--c-heading); }
+.stageHint { font-size: var(--fs-sm); color: var(--c-text-muted); }
+.stageCount { order: 2; font-size: var(--fs-kpi); font-weight: 700; color: var(--c-heading); font-variant-numeric: tabular-nums; letter-spacing: -0.03em; line-height: 1.1; }
+
+/* ── Table toolbar ────────────────────────────────────────────────────────── */
+.toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 14px 16px; border-bottom: 1px solid var(--c-border);
+}
+.search { width: 280px; max-width: 100%; }
+@media (max-width: 640px) { .search { width: 100%; } }
+
+.bayCell { display: flex; align-items: center; gap: 10px; }
+.actionsHead { text-align: right; }
+
+/* ── Arrival mode choice ──────────────────────────────────────────────────── */
+.choiceGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.choice {
+  position: relative; display: flex; flex-direction: column; gap: 4px; padding: 16px;
+  border: 1.5px solid var(--c-border); border-radius: var(--r-lg); cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+.choice:hover { border-color: var(--c-border-strong); }
+.choice:focus-within { box-shadow: var(--sh-focus); }
+.choiceActive { border-color: var(--c-primary-600); background: var(--c-primary-50); }
+.choiceIcon { width: 36px; height: 36px; border-radius: var(--r-md); background: var(--c-surface-2); color: var(--c-primary-700); display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+.choiceIcon svg { width: 20px; height: 20px; }
+.choiceActive .choiceIcon { background: var(--c-surface); }
+.choiceLabel { font-weight: 700; color: var(--c-heading); }
+.choiceDesc { font-size: 0.78rem; color: var(--c-text-muted); }
+
+/* ── Allocation dialog ────────────────────────────────────────────────────── */
+.dialogToolbar {
+  display: grid; grid-template-columns: minmax(220px, 280px) 1fr; gap: 16px; align-items: start;
+  padding-bottom: 16px; border-bottom: 1px solid var(--c-border); margin-bottom: 4px;
+}
+@media (max-width: 640px) { .dialogToolbar { grid-template-columns: 1fr; } }
+.demandField { min-width: 0; }
+.methodNote {
+  font-size: 0.8rem; color: var(--c-text-muted); line-height: 1.5;
+  background: var(--c-surface-2); border-radius: var(--r-md); padding: 10px 12px; margin-top: 22px;
+}
+@media (max-width: 640px) { .methodNote { margin-top: 0; } }
+
+.blockTitle { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--c-heading); margin: 18px 0 10px; }
+
+.recGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.recCard {
+  position: relative; display: flex; flex-direction: column; gap: 10px; padding: 14px;
+  border: 1.5px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-surface);
+  cursor: pointer; transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.recCard:hover { border-color: var(--c-border-strong); }
+.recCard:focus-within { box-shadow: var(--sh-focus); }
+.recCardActive { border-color: var(--c-primary-600); box-shadow: 0 0 0 1px var(--c-primary-600); }
+.recCardActive::after {
+  content: ''; position: absolute; top: 12px; right: 12px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--c-primary-600) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3'%3E%3Cpath d='M5 13l4 4L19 7'/%3E%3C/svg%3E") center / 12px no-repeat;
+}
+.recCardStatic { cursor: default; }
+.recTop { display: flex; gap: 6px; flex-wrap: wrap; padding-right: 24px; }
+.recBay .mono, .recBay > span:first-child { font-size: 1rem; }
+.recDistance { display: flex; flex-direction: column; }
+.recDistanceValue { font-size: 1.35rem; font-weight: 700; color: var(--c-heading); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.reasonList { list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--c-text-muted); }
+.reasonList li { padding-left: 12px; position: relative; }
+.reasonList li::before { content: ''; position: absolute; left: 0; top: 0.6em; width: 4px; height: 4px; border-radius: 50%; background: var(--c-text-soft); }
+.reasonNote { color: var(--c-warning-700); }
+
+.section { margin-top: 14px; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; }
+.sectionSummary {
+  padding: 10px 14px; font-size: 0.85rem; font-weight: 600; color: var(--c-heading);
+  cursor: pointer; background: var(--c-surface-2); list-style-position: inside;
+}
+.section[open] .sectionSummary { border-bottom: 1px solid var(--c-border); }
+.radioCell { width: 36px; }
+.radioCell input { width: 16px; height: 16px; accent-color: var(--c-primary-600); cursor: pointer; }
+.rowSelected td { background: var(--c-primary-50); }
+
+.summaryList {
+  display: grid; grid-template-columns: 130px 1fr; gap: 10px 16px; font-size: 0.875rem;
+  padding: 14px 16px; background: var(--c-surface-2); border-radius: var(--r-md);
+}
+.summaryList dt { color: var(--c-text-muted); font-weight: 500; }
+.summaryList dd { color: var(--c-text); }
+@media (max-width: 480px) { .summaryList { grid-template-columns: 1fr; gap: 2px; } .summaryList dd { margin-bottom: 8px; } }
+
+/* ── Page chrome ──────────────────────────────────────────────────────────── */
+.titleRow { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.helper { font-size: 0.84rem; color: var(--c-text-muted); line-height: 1.5; margin: -4px 0 0; }
+.helper strong { color: var(--c-heading); font-weight: 600; }
+.cardTools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ── Receive dialog ───────────────────────────────────────────────────────── */
+/* Fixed-size shell: every step fills the same box and the body never scrolls.
+   Only a step's results region (.stepScroll) scrolls, inside its own frame. */
+.receiveModal { height: min(720px, calc(100dvh - 48px)); }
+.receiveBody { display: flex; flex-direction: column; overflow: hidden; }
+.stepPane { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+.stepScroll {
+  flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-surface-2); padding: 12px;
+}
+.stepScroll > :only-child { margin-block: auto; }
+/* Form fields: sized to fit; scrolls only as a last resort on very short screens. */
+.stepFields { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 2px; margin: -2px; }
+.stepActions { margin-top: auto; flex-shrink: 0; padding-top: 14px; border-top: 1px solid var(--c-border); }
+.stepperWrap { flex-shrink: 0; margin: 0 0 16px; padding: 12px 16px; border-radius: var(--r-lg); background: var(--c-surface-2); border: 1px solid var(--c-border); }
+
+.formGrid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+@media (max-width: 560px) { .formGrid2 { grid-template-columns: 1fr; } }
+.full { grid-column: 1 / -1; }
+
+.inlineMaterial {
+  border: 1px dashed var(--c-primary-400); border-radius: var(--r-md); padding: 14px;
+  background: var(--c-primary-50); display: flex; flex-direction: column; gap: 12px;
+}
+.inlineHead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.inlineTitle { font-size: 0.85rem; font-weight: 700; color: var(--c-heading); }
+
+.consignmentList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.consignment {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: start; padding: 12px 14px;
+  border: 1.5px solid var(--c-border); border-radius: var(--r-md); cursor: pointer; background: var(--c-surface);
+}
+.consignment:hover { border-color: var(--c-border-strong); }
+.consignment:focus-within { box-shadow: var(--sh-focus); }
+.consignmentActive { border-color: var(--c-primary-600); background: var(--c-primary-50); }
+.consignmentBlocked { cursor: not-allowed; background: var(--c-surface-2); }
+.consignment input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--c-primary-600); }
+.consignmentMain { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.consignmentMeta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.76rem; color: var(--c-text-muted); }
+.consignmentQty { font-weight: 700; color: var(--c-heading); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.problemList { grid-column: 2 / -1; margin: 4px 0 0; padding-left: 16px; font-size: 0.76rem; color: var(--c-danger-700); }
+
+.doneBox { align-items: center; justify-content: center; text-align: center; gap: 10px; padding: 12px 8px; }
+.doneIcon { width: 44px; height: 44px; border-radius: 50%; background: var(--c-success-50); color: var(--c-success-700); display: flex; align-items: center; justify-content: center; }
+.doneIcon svg { width: 22px; height: 22px; }
+
+/* ── Drawer (catalogue lot drill-down) ────────────────────────────────────── */
+.drawerOverlay { position: fixed; inset: 0; background: var(--c-scrim); backdrop-filter: blur(3px); z-index: 700; /* above the shell (≤100), below every modal (≥800) */ display: flex; justify-content: flex-end; }
+.drawer {
+  width: min(560px, 100%); height: 100%; background: var(--c-overlay); box-shadow: var(--sh-xl); border-left: 1px solid var(--c-border-strong);
+  animation: wt-slide-in-right var(--d-slow) var(--ease-out) both;
+  display: flex; flex-direction: column; outline: none;
+}
+.drawerHead { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--c-border); }
+.drawerTitles { flex: 1; min-width: 0; }
+.drawerTitle { font-size: 1.05rem; font-weight: 700; color: var(--c-heading); margin: 0; }
+.drawerBody { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+.drawerClose {
+  border: none; background: none; color: var(--c-text-muted); cursor: pointer; padding: 4px; border-radius: var(--r-sm);
+}
+.drawerClose svg { width: 20px; height: 20px; }
+.drawerClose:focus-visible { box-shadow: var(--sh-focus); }
+
+/* ── Layout tab ───────────────────────────────────────────────────────────── */
+.quickForm { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; align-items: end; padding: 16px 20px; border-bottom: 1px solid var(--c-border); }
+.quickForm > :nth-child(-n+2) { grid-column: span 1; }
+@media (max-width: 1100px) { .quickForm { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .quickForm { grid-template-columns: 1fr; } }
+.quickActions { display: flex; gap: 8px; flex-wrap: wrap; }
+.settings { margin-top: 4px; border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-surface); overflow: hidden; }
+.settingsSummary { padding: 14px 20px; font-weight: 600; color: var(--c-heading); cursor: pointer; }
+.settingsBody { padding: 4px 20px 20px; border-top: 1px solid var(--c-border); }
+.railToolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.linkBtn { border: none; background: none; padding: 0; color: var(--c-primary-700); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.linkBtn:focus-visible { outline: none; box-shadow: var(--sh-focus); border-radius: 2px; }
+.drawerSectionTitle { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--c-heading); margin: 0; }
+.quickAlert { padding: 12px 20px 0; }

@@ -10,18 +10,11 @@
  */
 
 import { Rectangle, Tooltip } from 'react-leaflet';
-
-// Generate a consistent, subtle color based on the zone name string
-const getZoneColor = (zoneName) => {
-  let hash = 0;
-  for (let i = 0; i < zoneName.length; i++) {
-    hash = zoneName.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 50%, 45%)`;
-};
+import { useTheme, cssVar } from '../../context/ThemeContext';
+import styles from './MapLegend.module.css';
 
 function ZoneOverlay({ zoneName, bays }) {
+  useTheme(); // re-render on theme change so the outline colour updates
   if (!bays || bays.length === 0) return null;
 
   // Calculate geographic bounding box
@@ -44,35 +37,28 @@ function ZoneOverlay({ zoneName, bays }) {
     [maxLat + paddingLat, maxLng + paddingLng]
   ];
 
-  const color = getZoneColor(zoneName);
+  // Neutral outline: zones group spots, they don't carry status, so no data colour.
+  const color = cssVar('--c-text-soft');
 
   return (
     <Rectangle
       bounds={bounds}
       pathOptions={{
         color: color,
-        weight: 2,
-        dashArray: '6, 6',
+        weight: 1,
+        dashArray: '4, 6',
         fillColor: color,
-        fillOpacity: 0.04
+        fillOpacity: 0.03
       }}
       interactive={false} // Ignore pointer events so we can click bays underneath
     >
       <Tooltip
         direction="top"
         permanent
-        opacity={0.85}
+        opacity={1}
         className="zone-tooltip"
       >
-        <div style={{
-          fontSize: '0.8rem',
-          fontWeight: '700',
-          color: '#1e293b',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px'
-        }}>
-          {zoneName}
-        </div>
+        <span className={styles.zoneLabel}>{zoneName}</span>
       </Tooltip>
     </Rectangle>
   );

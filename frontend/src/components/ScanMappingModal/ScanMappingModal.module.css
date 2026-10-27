@@ -1,94 +1,19 @@
-.overlay {
-  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(2px);
-  display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;
-  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
-}
-.modal {
-  background: #fff; border-radius: 16px; width: 100%; max-width: 540px;
-  max-height: 92vh; max-height: 92dvh;
-  display: flex; flex-direction: column; overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
-  animation: wt-scale-in 0.22s var(--ease-out) both;
-}
-
-.header {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  padding: 22px 24px 16px; border-bottom: 1px solid #f1f5f9; flex-shrink: 0;
-}
-.headerLeft { display: flex; align-items: center; gap: 14px; }
-.headerIcon {
-  width: 44px; height: 44px; border-radius: 12px; background: #7c3aed; color: #fff;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
-}
-.headerIcon svg { width: 22px; height: 22px; }
-.title { font-size: 1.15rem; font-weight: 700; color: #0f172a; margin: 0 0 2px; }
-.subtitle { font-size: 0.8rem; color: #94a3b8; margin: 0; max-width: 360px; }
-.closeBtn {
-  width: 32px; height: 32px; border: none; background: #f1f5f9; color: #64748b; border-radius: 8px;
-  cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s; flex-shrink: 0;
-}
-.closeBtn:hover { background: #e2e8f0; }
-.closeBtn svg { width: 16px; height: 16px; }
-
-.body { padding: 18px 24px 24px; display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; overflow-y: auto; }
-
-.station {
-  border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px;
-  background: #fafbff;
-}
+.stepper { margin-bottom: 18px; padding: 12px 14px; border-radius: var(--r-lg); background: var(--c-surface-2); border: 1px solid var(--c-border); }
+.station { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: var(--r-lg); border: 1px solid var(--c-border); background: var(--c-surface); }
+.stationDone { border-color: var(--c-success-border); }
 .stationHead { display: flex; align-items: center; gap: 10px; }
 .stepNum {
-  width: 22px; height: 22px; border-radius: 50%; background: #7c3aed; color: #fff;
-  font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: var(--fs-xs); font-weight: 700; background: var(--c-brand-tint); color: var(--c-brand-fg);
 }
-.stationTitle { font-size: 0.9rem; font-weight: 700; color: #0f172a; flex: 1; }
-.okPill { font-size: 0.7rem; font-weight: 700; color: #16a34a; background: #dcfce7; padding: 3px 9px; border-radius: 20px; }
-
-.select, .payloadInput {
-  width: 100%; box-sizing: border-box; padding: 9px 11px; border: 1.5px solid #e2e8f0; border-radius: 9px;
-  font-size: 0.85rem; color: #1e293b; font-family: inherit; background: #fff;
-}
-.payloadInput { resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 0.75rem; }
-.select:focus, .payloadInput:focus { outline: none; border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12); }
-
-.preview {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 9px 12px; background: #fff; border: 1px solid #e9d5ff; border-radius: 9px;
-}
-.code {
-  font-family: ui-monospace, Consolas, monospace; font-size: 0.8rem; font-weight: 600; color: #7c3aed;
-  background: #f5f3ff; padding: 3px 8px; border-radius: 5px;
-}
-.previewMain { font-size: 0.85rem; font-weight: 600; color: #1e293b; }
-.previewSub { font-size: 0.8rem; color: #64748b; }
-.movePill { font-size: 0.72rem; font-weight: 600; color: #b45309; background: #fef3c7; padding: 3px 9px; border-radius: 20px; margin-left: auto; }
-
-.connector { display: flex; justify-content: center; color: #c4b5fd; }
-.connector svg { width: 22px; height: 22px; }
-
-.outcome {
-  padding: 11px 14px; border-radius: 10px; font-size: 0.85rem; font-weight: 600;
-  background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
-}
-.outcomeWarn { background: #fffbeb; color: #b45309; border-color: #fde68a; }
-
-.errorBanner {
-  background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c;
-  padding: 10px 14px; border-radius: 10px; font-size: 0.83rem;
-}
-
-.footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px 20px; border-top: 1px solid #f1f5f9; flex-shrink: 0; }
-.cancelBtn {
-  padding: 10px 20px; border: 1.5px solid #e2e8f0; background: #fff; color: #475569;
-  border-radius: 10px; font-size: 0.875rem; font-weight: 600; cursor: pointer;
-}
-.cancelBtn:hover:not(:disabled) { background: #f8fafc; }
-.submitBtn {
-  padding: 10px 22px; border: none; background: #7c3aed; color: #fff; border-radius: 10px;
-  font-size: 0.875rem; font-weight: 600; cursor: pointer; box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
-}
-.submitBtn:hover:not(:disabled) { background: #6d28d9; }
-.submitBtn:disabled, .cancelBtn:disabled { opacity: 0.55; cursor: not-allowed; }
-
-/* Modal motion already applied inline above */
+.stationDone .stepNum { background: var(--c-success); color: var(--c-bg); }
+.stepNum svg { width: 14px; height: 14px; }
+.stationTitle { flex: 1; font-size: var(--fs-md); font-weight: 650; color: var(--c-heading); }
+.payload { font-family: var(--font-mono); font-size: var(--fs-sm); }
+.preview { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-md); background: var(--c-surface-2); border: 1px solid var(--c-border); flex-wrap: wrap; }
+.previewIcon { width: 34px; height: 34px; border-radius: var(--r-sm); display: flex; align-items: center; justify-content: center; background: var(--c-brand-tint); color: var(--c-brand-fg); flex-shrink: 0; }
+.previewIcon svg { width: 17px; height: 17px; }
+.previewText { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.outcome { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-md); background: var(--c-info-bg); border: 1px solid var(--c-info-border); color: var(--c-info-fg); font-size: var(--fs-md); font-weight: 550; }
+.outcome svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; }
+.outcomeWarn { background: var(--c-warning-bg); border-color: var(--c-warning-border); color: var(--c-warning-fg); }

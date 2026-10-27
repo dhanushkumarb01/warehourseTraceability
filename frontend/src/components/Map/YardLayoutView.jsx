@@ -1,26 +1,27 @@
 /**
  * YardLayoutView Component
  *
- * A schematic, non-map visualization of the warehouse yard.
- * Designed for non-technical stakeholders and client demonstrations.
+ * A schematic, non-map view of the yard: one card per yard area (zone) with
+ * an occupancy bar, and a tile per storage spot (bay) showing its status by
+ * icon + label + colour. Built for people who don't read maps.
  *
  * Architecture:
  *   - Receives the same `bays` array from the parent (no API call).
  *   - Groups bays by zone dynamically — no hardcoded zone names.
- *   - Clicking a bay block fires onSelectBay, which surfaces the BayInfoPanel.
- *   - Status colors are sourced from statusToColour() in mapUtils for consistency.
- *   - Future sections (material count, QR, dispatch) are reserved as empty space
- *     inside each bay block — uncomment and populate when those modules ship.
+ *   - Clicking a tile fires onSelectBay, which surfaces the BayInfoPanel.
  *
  * Props:
- *   bays         {Array}            — all bay objects from the API
- *   selectedBay  {object|null}      — currently selected bay (or null)
- *   onSelectBay  {function(bay)}    — called when a bay block is clicked
+ *   bays             {Array}          — bay objects to show (already filtered)
+ *   selectedBay      {object|null}    — currently selected bay (or null)
+ *   onSelectBay      {function(bay)}  — called when a tile is clicked
+ *   inventorySummary {object}         — { [bayId]: { lotCount } }
  */
 
 import { useMemo } from 'react';
 import { statusToColour } from '../../utils/mapUtils';
-import StatusBadge from '../StatusBadge/StatusBadge';
+import { ProgressBar, EmptyState } from '../ui';
+import { Icons } from '../ui/icons';
+import { statusMeta } from '../ui/status';
 import styles from './YardLayoutView.module.css';
 
 function YardLayoutView({ bays, selectedBay, onSelectBay, inventorySummary = {} }) {
@@ -28,23 +29,17 @@ function YardLayoutView({ bays, selectedBay, onSelectBay, inventorySummary = {} 
   const zoneGroups = useMemo(() => {
     const groups = {};
     for (const bay of bays) {
-      const zone = bay.zone || 'Unassigned';
+      const zone = bay.zone || 'No yard area';
       if (!groups[zone]) groups[zone] = [];
       groups[zone].push(bay);
     }
-    // Sort zones alphabetically for consistent rendering
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [bays]);
 
   if (bays.length === 0) {
     return (
-      <div className={styles.empty}>
-        <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <rect x="8" y="16" width="48" height="32" rx="3" />
-          <path strokeLinecap="round" d="M8 24h48M20 24v24M44 24v24" />
-        </svg>
-        <p className={styles.emptyTitle}>No bays registered</p>
-        <p className={styles.emptySubtitle}>Add bays in Bay Management to view the yard layout.</p>
+      <div className={styles.layout}>
+        <EmptyState icon={Icons.grid} title="No storage spots to show" message="Try a different filter, or add storage spots in Receiving & storage → Yard layout." />
       </div>
     );
   }
@@ -68,28 +63,33 @@ function YardLayoutView({ bays, selectedBay, onSelectBay, inventorySummary = {} 
 // ── ZoneSection ───────────────────────────────────────────────────────────────
 
 function ZoneSection({ zoneName, bays, selectedBay, onSelectBay, inventorySummary = {} }) {
-  const available = bays.filter(b => b.status === 'AVAILABLE').length;
-  const occupied = bays.filter(b => b.status === 'OCCUPIED').length;
-  const inactive = bays.filter(b => b.status === 'INACTIVE').length;
+  const available = bays.filter((b) => b.status === 'AVAILABLE').length;
+  const occupied = bays.filter((b) => b.status === 'OCCUPIED').length;
+  const usable = available + occupied;
+  const pct = usable ? Math.round((occupied / usable) * 100) : 0;
   const zoneLots = bays.reduce((sum, b) => sum + (inventorySummary[b.id]?.lotCount || 0), 0);
+  const tone = pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : 'teal';
 
   return (
-    <div className={styles.zone}>
-      {/* Zone header */}
+    <section className={styles.zone}>
       <div className={styles.zoneHeader}>
-        <div className={styles.zoneHeaderLeft}>
-          <span className={styles.zoneName}>{zoneName}</span>
-          <span className={styles.zoneCount}>{bays.length} bays</span>
-          <span className={styles.zoneLots}>{zoneLots} lots stored</span>
+        <div className={styles.zoneTitles}>
+          <h3 className={styles.zoneName}>{zoneName}</h3>
+          <p className={styles.zoneMeta}>
+            {bays.length} {bays.length === 1 ? 'spot' : 'spots'} · {zoneLots} {zoneLots === 1 ? 'batch' : 'batches'} stored
+          </p>
         </div>
-        <div className={styles.zoneMini}>
-          {available > 0 && <span className={styles.miniAvail}>{available} avail</span>}
-          {occupied > 0 && <span className={styles.miniOccup}>{occupied} occ</span>}
-          {inactive > 0 && <span className={styles.miniInact}>{inactive} inact</span>}
+        <div className={styles.zoneFill}>
+          <span className={`${styles.zonePct} wt-num`}>{pct}%</span>
+          <span className={styles.zonePctLabel}>full</span>
         </div>
       </div>
+      <ProgressBar value={pct} tone={tone} size="sm" label={`${zoneName} is ${pct}% full`} />
+      <p className={styles.zoneFree}>
+        <strong>{available}</strong> free · <strong>{occupied}</strong> in use
+        {bays.length - usable > 0 && <> · <strong>{bays.length - usable}</strong> out of use</>}
+      </p>
 
-      {/* Bay blocks grid */}
       <div className={styles.bayGrid}>
         {bays.map((bay) => (
           <BayBlock
@@ -101,57 +101,33 @@ function ZoneSection({ zoneName, bays, selectedBay, onSelectBay, inventorySummar
           />
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
 // ── BayBlock ──────────────────────────────────────────────────────────────────
 
 function BayBlock({ bay, isSelected, onSelect, lotCount = 0 }) {
-  const colour = statusToColour(bay.status);
-  const hasLots = lotCount > 0;
+  const meta = statusMeta(bay.status);
 
   return (
     <button
       id={`layout-bay-${bay.id}`}
-      className={`${styles.bayBlock} ${isSelected ? styles.bayBlockSelected : ''}`}
-      style={{ '--bay-colour': colour }}
+      className={`${styles.bayBlock} ${bay.status === 'INACTIVE' ? styles.bayOff : ''} ${isSelected ? styles.bayBlockSelected : ''}`}
+      style={{ '--bay-colour': statusToColour(bay.status) }}
       onClick={() => onSelect(bay)}
-      title={`${bay.bayCode} — ${bay.bayName} (${bay.status})`}
+      aria-pressed={isSelected}
+      aria-label={`${bay.bayCode}: ${meta.label}, ${lotCount} ${lotCount === 1 ? 'batch' : 'batches'}`}
     >
-      {/* Status accent bar */}
-      <div className={styles.bayAccent} />
-
-      {/* Bay code */}
-      <div className={styles.bayCode}>{bay.bayCode}</div>
-
-      {/* Bay name — truncated */}
-      <div className={styles.bayName} title={bay.bayName}>{bay.bayName}</div>
-
-      {/* Status badge */}
-      <div className={styles.bayStatus}>
-        <StatusBadge status={bay.status} />
-      </div>
-
-      {/*
-        ── Phase 3 – Bay QR ───────────────────────────────────────────────
-      */}
-      {bay.qrStatus === 'GENERATED' && (
-        <div className={styles.bayQr}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <rect x="3" y="3" width="7" height="7" rx="1" />
-            <rect x="14" y="3" width="7" height="7" rx="1" />
-            <rect x="14" y="14" width="7" height="7" rx="1" />
-            <rect x="3" y="14" width="7" height="7" rx="1" />
-          </svg>
-        </div>
-      )}
-      {/* Inventory occupancy — live lot count from active mappings */}
-      <div className={styles.bayMaterial}>
-        <span className={hasLots ? styles.lotSlotFilled : styles.futureSlot}>
-          {lotCount} {lotCount === 1 ? 'lot' : 'lots'}
-        </span>
-      </div>
+      <span className={styles.bayTop}>
+        <span className={styles.bayCode}>{bay.bayCode}</span>
+        {bay.qrStatus === 'GENERATED' && <span className={styles.bayQr} title="QR label printed">{Icons.qr}</span>}
+      </span>
+      <span className={styles.bayStatus}>
+        <span className={styles.bayIcon}>{Icons[meta.icon]}</span>
+        {meta.label}
+      </span>
+      <span className={styles.bayLots}>{lotCount} {lotCount === 1 ? 'batch' : 'batches'}</span>
     </button>
   );
 }

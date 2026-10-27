@@ -1,8 +1,13 @@
 /**
- * BayManagement Page
+ * BayManagement Page — "Bays & Layout"
  *
- * The primary page for managing warehouse bays.
- * Orchestrates all Bay CRUD operations: list, create, view, edit, delete.
+ * Manages the warehouse layout used by bay allocation:
+ *   - Bays           CRUD, QR, coordinates (existing behaviour)
+ *   - Zones          connectivity rules + reference coordinates
+ *   - Loading docks  dock coordinates + arrival routes received
+ *
+ * Write actions are shown only to the bay-management group (ADMIN,
+ * SUPERVISOR); the backend enforces the same rule.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -17,12 +22,28 @@ import BayDetailModal  from '../../components/BayDetailModal/BayDetailModal';
 import ConfirmDialog   from '../../components/ConfirmDialog/ConfirmDialog';
 import StatusBadge     from '../../components/StatusBadge/StatusBadge';
 import Toast           from '../../components/Toast/Toast';
+import { PageHeader, Tabs, Button } from '../../components/ui';
+import { Icons } from '../../components/ui/icons';
+import { ZonesPanel, DocksPanel } from './LayoutPanels';
+import { fetchZones } from '../../services/locationService';
+import { useAuth } from '../../context/AuthContext';
+import { GROUPS } from '../../config/roles';
 import styles          from './BayManagement.module.css';
+
+const TABS = [
+  { value: 'bays', label: 'Bays', icon: Icons.box },
+  { value: 'zones', label: 'Zones', icon: Icons.layers },
+  { value: 'docks', label: 'Loading docks', icon: Icons.dock },
+];
 
 const formatCoord = (val) =>
   val !== null && val !== undefined ? Number(val).toFixed(4) : '—';
 
 function BayManagement() {
+  const { can } = useAuth();
+  const canWrite = can(GROUPS.BAY_WRITE);
+  const [tab,        setTab]        = useState('bays');
+  const [zoneNames,  setZoneNames]  = useState([]);
   const [bays,       setBays]       = useState([]);
   const [isLoading,  setIsLoading]  = useState(true);
   const [fetchError, setFetchError] = useState(null);
@@ -55,6 +76,11 @@ function BayManagement() {
   }, []);
 
   useEffect(() => { loadBays(); }, [loadBays]);
+
+  const loadZoneNames = useCallback(() => {
+    fetchZones().then((zones) => setZoneNames(zones.map((z) => z.name))).catch(() => setZoneNames([]));
+  }, []);
+  useEffect(() => { loadZoneNames(); }, [loadZoneNames]);
 
   const handleOpenCreate = () => {
     setSelectedBay(null);
@@ -90,6 +116,7 @@ function BayManagement() {
       }
       setFormOpen(false);
       loadBays();
+      loadZoneNames();
     } catch (err) {
       const apiErrors = err.response?.data?.errors;
       if (apiErrors?.length) {
@@ -131,32 +158,21 @@ function BayManagement() {
         onClose={clearToast}
       />
 
-      <div className={styles.pageHeader}>
-        <div className={styles.pageHeaderLeft}>
-          <div className={styles.pageIcon}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 21h18M3 7l9-4 9 4M4 7v14M20 7v14M9 21V12h6v9" />
-            </svg>
-          </div>
-          <div>
-            <h1 className={styles.pageTitle}>Bay Master Management</h1>
-            <p className={styles.pageBreadcrumb}>
-              Warehouse Traceability &rsaquo; Phase 2 &rsaquo; Bay Management
-            </p>
-          </div>
-        </div>
-        <button
-          id="create-bay-btn"
-          className={styles.primaryBtn}
-          onClick={handleOpenCreate}
-        >
-          <svg viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-          </svg>
-          Add Bay
-        </button>
-      </div>
+      <PageHeader
+        icon={Icons.dock}
+        title="Bays & Layout"
+        subtitle="Bays, zones and loading docks — the layout used for distances and bay allocation."
+        actions={canWrite && tab === 'bays' && (
+          <Button id="create-bay-btn" variant="primary" icon={Icons.plus} onClick={handleOpenCreate}>Add bay</Button>
+        )}
+      />
 
+      <Tabs tabs={TABS} value={tab} onChange={setTab} ariaLabel="Layout sections" />
+
+      {tab === 'zones' && <ZonesPanel canWrite={canWrite} notify={showToast} onChanged={() => { loadBays(); loadZoneNames(); }} />}
+      {tab === 'docks' && <DocksPanel canWrite={canWrite} notify={showToast} />}
+
+      {tab === 'bays' && (<>
       {!isLoading && !fetchError && (
         <div className={styles.statsStrip}>
           <StatCard label="Total Bays" value={bays.length} color="#2563eb" bg="#eff6ff" />
@@ -200,12 +216,9 @@ function BayManagement() {
             <p className={styles.emptySubtitle}>
               Start by adding your first warehouse bay.
             </p>
-            <button className={styles.primaryBtn} onClick={handleOpenCreate}>
-              <svg viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-              </svg>
-              Add First Bay
-            </button>
+            {canWrite && (
+              <Button variant="primary" icon={Icons.plus} onClick={handleOpenCreate}>Add first bay</Button>
+            )}
           </div>
         )}
 
@@ -263,6 +276,7 @@ function BayManagement() {
                             <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
                           </svg>
                         </button>
+                        {canWrite && (<>
                         <button
                           id={`edit-bay-${bay.id}`}
                           className={`${styles.actionBtn} ${styles.editBtn}`}
@@ -283,6 +297,7 @@ function BayManagement() {
                             <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
                           </svg>
                         </button>
+                        </>)}
                       </div>
                     </td>
                   </tr>
@@ -293,7 +308,10 @@ function BayManagement() {
         )}
       </div>
 
+      </>)}
+
       <BayForm
+        zoneOptions={zoneNames}
         isOpen={formOpen}
         onClose={() => { if (!submitting) setFormOpen(false); }}
         onSubmit={handleFormSubmit}

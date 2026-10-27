@@ -69,20 +69,26 @@ export const computeMapZoom = (bays) => {
 };
 
 /**
- * Map a BayStatus enum value to a display-friendly colour token.
- * Returns a hex colour suitable for marker/icon rendering.
+ * Map a BayStatus enum value to its occupancy colour token name.
+ * Colours are theme tokens (index.css); status is never shown by colour alone.
  *
  * @param {'AVAILABLE'|'OCCUPIED'|'INACTIVE'} status
- * @returns {string}
+ * @returns {string} CSS custom property name, e.g. '--c-occ-free'
  */
-export const statusToColour = (status) => {
+export const statusColourVar = (status) => {
   const map = {
-    AVAILABLE: '#16a34a',
-    OCCUPIED:  '#ca8a04',
-    INACTIVE:  '#94a3b8',
+    AVAILABLE: '--c-occ-free',
+    OCCUPIED:  '--c-occ-full',
+    INACTIVE:  '--c-occ-off',
   };
-  return map[status] ?? '#64748b';
+  return map[status] ?? '--c-text-soft';
 };
+
+/**
+ * Status colour as a CSS value (`var(--token)`) — for DOM/CSS contexts
+ * (marker HTML, inline style custom properties).
+ */
+export const statusToColour = (status) => `var(${statusColourVar(status)})`;
 
 /**
  * Format a numeric coordinate value for human display.

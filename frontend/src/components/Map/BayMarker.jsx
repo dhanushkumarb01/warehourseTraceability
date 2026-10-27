@@ -18,6 +18,8 @@
 import { Marker, Tooltip } from 'react-leaflet';
 import { createBayIcon } from '../../utils/mapIcons';
 import { hasPolygon } from '../../utils/mapUtils';
+import { statusMeta } from '../ui/status';
+import styles from './MapLegend.module.css';
 
 function BayMarker({ bay, isSelected, onSelect }) {
   // When polygon data exists, BayPolygon handles the visualization
@@ -37,15 +39,8 @@ function BayMarker({ bay, isSelected, onSelect }) {
         opacity={1}
         permanent={false}
       >
-        <span style={{
-          fontSize:   '0.75rem',
-          fontWeight: '600',
-          fontFamily: 'ui-monospace, Consolas, monospace',
-          color:      '#0f172a',
-          whiteSpace: 'nowrap',
-        }}>
-          {bay.bayCode}
-        </span>
+        <span className={styles.tipCode}>{bay.bayCode}</span>
+        <span className={styles.tipMeta}>{statusMeta(bay.status).label}{bay.zone ? ` · ${bay.zone}` : ''}</span>
       </Tooltip>
     </Marker>
   );

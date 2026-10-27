@@ -1,5 +1,5 @@
 /**
- * DispatchDetailModal — full dispatch details + approval workflow.
+ * DispatchDetailModal — outgoing-truck request details + approval workflow.
  *
  * Actions adapt to status:
  *   PENDING  → Approve (with optional approved quantity) / Reject / Cancel
@@ -21,13 +21,18 @@ import { useEffect, useState } from 'react';
 import StatusBadge from '../StatusBadge/StatusBadge';
 import SapValidationPanel from '../SapValidationPanel/SapValidationPanel';
 import { previewDispatchValidation } from '../../services/sapService';
+import { Modal, Button, Field, FormAlert, DetailList, Timeline } from '../ui';
+import { Icons } from '../ui/icons';
+import { uiStyles } from '../ui/styles';
 import styles from './DispatchDetailModal.module.css';
 
-const fmt = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
+const fmt = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null);
 
-const Field = ({ label, value }) => (
-  <div className={styles.field}><span className={styles.fLabel}>{label}</span><span className={styles.fValue}>{value ?? '—'}</span></div>
-);
+const MODE_COPY = {
+  approve: { title: 'Approve this request', button: 'Approve request', hint: 'You can approve less than was asked for.' },
+  reject: { title: 'Reject this request', button: 'Reject request', hint: 'The batch stays in storage. Tell the requester why.' },
+  cancel: { title: 'Cancel this request', button: 'Cancel request', hint: 'The truck won’t be allowed out for this request.' },
+};
 
 function DispatchDetailModal({ isOpen, dispatch, busy = null, error = null, canApprove = true, canCancel = true, onClose, onApprove, onReject, onCancel }) {
   const [mode, setMode] = useState(null); // 'approve' | 'reject' | 'cancel'
@@ -59,6 +64,7 @@ function DispatchDetailModal({ isOpen, dispatch, busy = null, error = null, canA
   const isPending = dispatch.dispatchStatus === 'PENDING';
   const isApproved = dispatch.dispatchStatus === 'APPROVED';
   const lot = dispatch.lot;
+  const unit = lot?.unit || '';
 
   const confirm = () => {
     const trimmed = remarks.trim() || null;
@@ -67,116 +73,105 @@ function DispatchDetailModal({ isOpen, dispatch, busy = null, error = null, canA
     else if (mode === 'cancel') onCancel({ remarks: trimmed });
   };
 
+  const stopped = ['REJECTED', 'CANCELLED'].includes(dispatch.dispatchStatus);
+  const steps = [
+    { key: 'req', title: 'Requested', state: 'done', time: fmt(dispatch.createdAt), meta: dispatch.requester?.username && `by ${dispatch.requester.username}` },
+    {
+      key: 'rev',
+      title: stopped ? (dispatch.dispatchStatus === 'REJECTED' ? 'Rejected' : 'Cancelled') : 'Approved',
+      state: stopped ? 'error' : dispatch.approvedAt ? 'done' : 'current',
+      time: fmt(dispatch.approvedAt) || (stopped ? undefined : 'Waiting for a supervisor'),
+      meta: dispatch.approver?.username && `by ${dispatch.approver.username}`,
+    },
+    !stopped && {
+      key: 'exit', title: 'Left through the exit gate',
+      state: dispatch.completedAt ? 'done' : isApproved ? 'current' : 'upcoming',
+      time: fmt(dispatch.completedAt) || (isApproved ? 'Ready to be scanned at the gate' : undefined),
+    },
+  ].filter(Boolean);
+
+  const footer = mode ? (
+    <>
+      <Button onClick={() => setMode(null)} disabled={Boolean(busy)} icon={Icons.arrowLeft}>Back</Button>
+      <Button
+        variant={mode === 'approve' ? 'primary' : 'dangerSolid'}
+        onClick={confirm}
+        loading={Boolean(busy)}
+        disabled={mode !== 'approve' && remarks.trim() === ''}
+      >
+        {MODE_COPY[mode].button}
+      </Button>
+    </>
+  ) : isPending ? (
+    <>
+      {canCancel && <Button variant="ghost" onClick={() => setMode('cancel')}>Cancel request</Button>}
+      {canApprove && <Button variant="danger" icon={Icons.xCircle} onClick={() => setMode('reject')}>Reject</Button>}
+      {canApprove && <Button variant="primary" icon={Icons.check} onClick={() => setMode('approve')}>Approve</Button>}
+      {!canApprove && !canCancel && <Button onClick={onClose}>Close</Button>}
+    </>
+  ) : isApproved ? (
+    <>
+      {canCancel && <Button variant="danger" onClick={() => setMode('cancel')}>Cancel request</Button>}
+      <Button variant="primary" onClick={onClose}>Done</Button>
+    </>
+  ) : <Button variant="primary" onClick={onClose}>Close</Button>;
+
   return (
-    <div className={styles.overlay} role="dialog" aria-modal="true">
-      <div className={styles.modal}>
-        <div className={styles.header}>
-          <div className={styles.headerLeft}>
-            <div className={styles.headerIcon}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H3m10 11h6m0 0V9.5a1 1 0 00-.293-.707l-2.5-2.5A1 1 0 0015.5 6H13" /></svg>
-            </div>
-            <div>
-              <h2 className={styles.title}>{dispatch.dispatchNumber}</h2>
-              <p className={styles.subtitle}>Dispatch request details</p>
-            </div>
-          </div>
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Close"><svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg></button>
-        </div>
-
-        <div className={styles.statusBanner}><StatusBadge status={dispatch.dispatchStatus} /></div>
-
-        <div className={styles.body}>
-          <section className={styles.section}>
-            <h3 className={styles.sectionTitle}>Material</h3>
-            <div className={styles.grid}>
-              <Field label="Lot Code" value={lot?.lotCode} />
-              <Field label="Material" value={lot?.material?.materialName} />
-              <Field label="Origin Bay" value={dispatch.bay?.bayCode} />
-              <Field label="Zone" value={dispatch.bay?.zone} />
-            </div>
-          </section>
-
-          <section className={styles.section}>
-            <h3 className={styles.sectionTitle}>Quantities & People</h3>
-            <div className={styles.grid}>
-              <Field label="Requested Qty" value={`${dispatch.requestedQuantity} ${lot?.unit || ''}`} />
-              <Field label="Approved Qty" value={dispatch.approvedQuantity != null ? `${dispatch.approvedQuantity} ${lot?.unit || ''}` : '—'} />
-              <Field label="Requested By" value={dispatch.requester?.username} />
-              <Field label="Approved By" value={dispatch.approver?.username} />
-              <Field label="Vehicle" value={dispatch.vehicleNumber} />
-              <Field label="Remarks" value={dispatch.remarks} />
-            </div>
-          </section>
-
-          <section className={styles.section}>
-            <h3 className={styles.sectionTitle}>Timeline</h3>
-            <div className={styles.grid}>
-              <Field label="Requested" value={fmt(dispatch.createdAt)} />
-              <Field label="Approved/Reviewed" value={fmt(dispatch.approvedAt)} />
-              <Field label="Completed" value={fmt(dispatch.completedAt)} />
-            </div>
-          </section>
-
-          {/* SAP validation (pending dispatches, for approvers) */}
-          {isPending && canApprove && (sap.loading || sap.result || sap.error) && (
-            <SapValidationPanel loading={sap.loading} error={sap.error} result={sap.result} variant="dispatch" />
+    <Modal
+      isOpen
+      onClose={onClose}
+      busy={Boolean(busy)}
+      size="lg"
+      icon={Icons.truckOut}
+      title={mode ? MODE_COPY[mode].title : `${lot?.material?.materialName || 'Outgoing request'}`}
+      subtitle={<>Request <span className={uiStyles.mono}>{dispatch.dispatchNumber}</span> · batch <span className={uiStyles.mono}>{lot?.lotCode}</span></>}
+      footer={footer}
+      footerNote={!mode && isApproved ? 'Ready for the exit gate' : undefined}
+    >
+      {mode ? (
+        <div className={uiStyles.formSection}>
+          <FormAlert>{error}</FormAlert>
+          <p className={uiStyles.muted}>{MODE_COPY[mode].hint}</p>
+          {mode === 'approve' && (
+            <Field label="Amount to approve" hint={`Requested: ${dispatch.requestedQuantity} ${unit}`}>
+              {(p) => <input {...p} type="number" min="0" step="any" value={approvedQuantity} onChange={(e) => setApprovedQuantity(e.target.value)} />}
+            </Field>
           )}
-
-          {error && <div className={styles.errorBanner}>{error}</div>}
-
-          {/* Action mode forms */}
-          {mode && (
-            <section className={styles.actionForm}>
-              {mode === 'approve' && (
-                <div className={styles.field}>
-                  <label className={styles.fLabel}>Approved Quantity</label>
-                  <input className={styles.input} type="number" min="0" step="any" value={approvedQuantity} onChange={(e) => setApprovedQuantity(e.target.value)} />
-                </div>
-              )}
-              <div className={styles.field}>
-                <label className={styles.fLabel}>Remarks {mode !== 'approve' && <span className={styles.req}>*</span>}</label>
-                <textarea className={styles.textarea} rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} maxLength={500}
-                  placeholder={mode === 'reject' ? 'Reason for rejection' : mode === 'cancel' ? 'Reason for cancellation' : 'Optional note'} />
-              </div>
-              <div className={styles.actionFormBtns}>
-                <button className={styles.cancelBtn} onClick={() => setMode(null)} disabled={Boolean(busy)}>Back</button>
-                <button
-                  className={mode === 'approve' ? styles.approveBtn : mode === 'reject' ? styles.rejectBtn : styles.cancelActionBtn}
-                  onClick={confirm}
-                  disabled={Boolean(busy) || (mode !== 'approve' && remarks.trim() === '')}
-                >
-                  {busy ? 'Working…' : mode === 'approve' ? 'Confirm Approval' : mode === 'reject' ? 'Confirm Rejection' : 'Confirm Cancellation'}
-                </button>
-              </div>
-            </section>
-          )}
+          <Field label={mode === 'approve' ? 'Note' : 'Reason'} required={mode !== 'approve'} optional={mode === 'approve'}>
+            {(p) => (
+              <textarea {...p} rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} maxLength={500}
+                placeholder={mode === 'reject' ? 'e.g. Batch reserved for another order' : mode === 'cancel' ? 'e.g. Customer cancelled the order' : 'Optional note for the record'} />
+            )}
+          </Field>
         </div>
-
-        {!mode && (
-          <div className={styles.footer}>
-            {isPending && (
-              <>
-                {canApprove && <button className={styles.rejectBtn} onClick={() => setMode('reject')}>Reject</button>}
-                {canCancel && <button className={styles.cancelActionBtn} onClick={() => setMode('cancel')}>Cancel</button>}
-                {canApprove && <button className={styles.approveBtn} onClick={() => setMode('approve')}>Approve</button>}
-                {!canApprove && !canCancel && <button className={styles.cancelBtn} onClick={onClose}>Close</button>}
-              </>
+      ) : (
+        <div className={styles.layout}>
+          <div className={styles.main}>
+            <div className={styles.statusRow}><StatusBadge status={dispatch.dispatchStatus} /></div>
+            <DetailList
+              items={[
+                { label: 'Material', value: lot?.material?.materialName },
+                { label: 'Batch', value: <span className={uiStyles.mono}>{lot?.lotCode}</span> },
+                { label: 'From spot', value: <span className={uiStyles.mono}>{dispatch.bay?.bayCode}</span> },
+                { label: 'Yard area', value: dispatch.bay?.zone },
+                { label: 'Asked for', value: `${dispatch.requestedQuantity} ${unit}` },
+                { label: 'Approved', value: dispatch.approvedQuantity != null ? `${dispatch.approvedQuantity} ${unit}` : '—' },
+                { label: 'Truck number', value: dispatch.vehicleNumber || '—' },
+                { label: 'Note', value: dispatch.remarks || '—' },
+              ]}
+            />
+            {isPending && canApprove && (sap.loading || sap.result || sap.error) && (
+              <SapValidationPanel loading={sap.loading} error={sap.error} result={sap.result} variant="dispatch" />
             )}
-            {isApproved && (
-              <>
-                <span className={styles.readyHint}>Ready for gate validation</span>
-                {canCancel
-                  ? <button className={styles.cancelActionBtn} onClick={() => setMode('cancel')}>Cancel Dispatch</button>
-                  : <button className={styles.cancelBtn} onClick={onClose}>Close</button>}
-              </>
-            )}
-            {!isPending && !isApproved && (
-              <button className={styles.cancelBtn} onClick={onClose}>Close</button>
-            )}
+            <FormAlert>{error}</FormAlert>
           </div>
-        )}
-      </div>
-    </div>
+          <div className={styles.side}>
+            <p className={uiStyles.sectionTitle}>Progress</p>
+            <Timeline items={steps} />
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 

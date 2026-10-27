@@ -1,9 +1,9 @@
 /**
- * GateValidation Page — exit gate dashboard + scan-to-exit workflow.
+ * GateValidation Page ("Exit gate") — exit gate dashboard + scan-to-exit.
  *
  * Shows what is waiting to exit (approved dispatches), the gate activity log
- * (validated / denied / exited records), inventory-impact stats, and the
- * scan-driven validation modal.
+ * (validated / denied / exited records), KPI cards, and the scan-driven
+ * validation modal. The scan button is the one primary action.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -15,9 +15,18 @@ import { fetchGateValidations, fetchPendingExits, fetchGateSummary } from '../..
 import StatusBadge from '../../components/StatusBadge/StatusBadge';
 import Toast from '../../components/Toast/Toast';
 import GateScanModal from '../../components/GateScanModal/GateScanModal';
+import {
+  PageHeader, StatCard, Card, Tabs, Button, IconButton, DataTable, LoadingRows, ErrorState, EmptyState, SearchInput,
+} from '../../components/ui';
+import { Icons } from '../../components/ui/icons';
+import { uiStyles } from '../../components/ui/styles';
 import styles from './GateValidation.module.css';
 
-const TABS = ['ALL', 'EXITED', 'DENIED'];
+const TABS = [
+  { value: 'ALL', label: 'All checks' },
+  { value: 'EXITED', label: 'Left the yard' },
+  { value: 'DENIED', label: 'Stopped' },
+];
 const fmt = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
 
 function GateValidation() {
@@ -30,6 +39,7 @@ function GateValidation() {
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [tab, setTab] = useState('ALL');
+  const [search, setSearch] = useState('');
 
   const [scanOpen, setScanOpen] = useState(false);
   const [toast, setToast] = useState({ message: '', type: '' });
@@ -45,7 +55,7 @@ function GateValidation() {
       ]);
       setRecords(recs); setPending(pend); setSummary(sum); setLots(lotsRes);
     } catch (err) {
-      setFetchError(err.message || 'Failed to load gate validation data.');
+      setFetchError(err);
     } finally {
       setIsLoading(false);
     }
@@ -53,132 +63,146 @@ function GateValidation() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const filtered = useMemo(
-    () => (tab === 'ALL' ? records : records.filter((r) => r.validationStatus === tab)),
-    [records, tab]
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return records
+      .filter((r) => tab === 'ALL' || r.validationStatus === tab)
+      .filter((r) => !q || [r.lot?.lotCode, r.lot?.material?.materialName, r.dispatch?.dispatchNumber, r.bay?.bayCode, r.remarks]
+        .some((v) => v && String(v).toLowerCase().includes(q)));
+  }, [records, tab, search]);
 
   const handleScanDone = (result) => {
     setToast({
-      message: result.decision === 'EXITED' ? 'Material exit authorised.' : `Exit denied: ${result.reason}`,
+      message: result.decision === 'EXITED' ? 'Cleared. The truck can leave the yard.' : `Stopped at the gate: ${result.reason}`,
       type: result.decision === 'EXITED' ? 'success' : 'error',
     });
     loadAll();
   };
 
+  const scanButton = canValidate && (
+    <Button variant="primary" size="lg" icon={Icons.scan} onClick={() => setScanOpen(true)}>Scan a truck’s batch</Button>
+  );
+
   return (
     <div className={styles.page}>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: '' })} />
 
-      <div className={styles.pageHeader}>
-        <div className={styles.pageHeaderLeft}>
-          <div className={styles.pageIcon}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M3 21V5a2 2 0 012-2h6m0 18V3m0 18h10M11 3h6a2 2 0 012 2v16M7 8h.01M7 12h.01" /></svg>
-          </div>
-          <div>
-            <h1 className={styles.pageTitle}>Exit Gate Validation</h1>
-            <p className={styles.pageBreadcrumb}>Authorise and record material leaving the warehouse</p>
-          </div>
-        </div>
-        <div className={styles.headerActions}>
-          {canValidate && (
-            <button className={styles.primaryBtn} onClick={() => setScanOpen(true)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path strokeLinecap="round" d="M14 14h3m4 0v.01M17 21h4M14 17v4" /></svg>
-              Scan to Exit
-            </button>
-          )}
-          <button className={styles.refreshBtn} onClick={loadAll} disabled={isLoading} title="Refresh">
-            <svg viewBox="0 0 20 20" fill="currentColor" className={isLoading ? styles.spinning : ''}><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
-          </button>
-        </div>
-      </div>
-
-      <div className={styles.statsStrip}>
-        <StatCard label="Ready for Exit" value={isLoading ? '—' : summary.readyForExit} color="#2563eb" />
-        <StatCard label="Exited" value={isLoading ? '—' : summary.EXITED} color="#7c3aed" />
-        <StatCard label="Denied" value={isLoading ? '—' : summary.DENIED} color="#dc2626" />
-        <StatCard label="Total Checks" value={isLoading ? '—' : summary.total} color="#0d9488" />
-      </div>
-
-      {/* Awaiting exit */}
-      <div className={styles.card}>
-        <div className={styles.cardHeader}>
-          <h3 className={styles.cardTitle}>Awaiting Exit</h3>
-          <span className={styles.count}>{pending.length} approved dispatches</span>
-        </div>
-        {isLoading ? (
-          <div className={styles.loadingState}><div className={styles.skeleton} /><div className={styles.skeleton} /></div>
-        ) : pending.length === 0 ? (
-          <div className={styles.emptyRow}>No approved dispatches are waiting at the gate.</div>
-        ) : (
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead><tr><th>Dispatch #</th><th>Lot</th><th>Material</th><th>Bay</th><th>Approved</th></tr></thead>
-              <tbody>
-                {pending.map((d) => (
-                  <tr key={d.id}>
-                    <td><span className={styles.code}>{d.dispatchNumber}</span></td>
-                    <td>{d.lot?.lotCode}</td>
-                    <td className={styles.nameCell}>{d.lot?.material?.materialName || '—'}</td>
-                    <td><span className={styles.bayChip}>{d.bay?.bayCode}</span></td>
-                    <td className={styles.muted}>{fmt(d.approvedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <PageHeader
+        icon={Icons.gate}
+        title="Exit gate"
+        term="Gate validation"
+        subtitle="Scan the batch on each truck before it leaves. We check it against the approved request and SAP."
+        actions={(
+          <>
+            <IconButton icon={Icons.refresh} label="Refresh" variant="outline" onClick={loadAll} disabled={isLoading} />
+            {scanButton}
+          </>
         )}
-      </div>
+      />
 
-      {/* Gate activity */}
-      <div className={styles.tabs}>
-        {TABS.map((t) => (
-          <button key={t} className={`${styles.tab} ${tab === t ? styles.tabActive : ''}`} onClick={() => setTab(t)}>
-            {t.charAt(0) + t.slice(1).toLowerCase()}
-          </button>
-        ))}
-      </div>
+      <section className={styles.kpis} aria-label="Gate summary">
+        <StatCard
+          icon={Icons.truckOut} label="Waiting at the gate" value={isLoading ? null : summary.readyForExit} loading={isLoading}
+          tone={summary.readyForExit > 0 ? 'info' : 'neutral'} unit="trucks"
+          hint="Approved and ready to be scanned out"
+        />
+        <StatCard
+          icon={Icons.checkCircle} label="Left the yard" value={isLoading ? null : summary.EXITED} loading={isLoading}
+          tone="success" hint="Scanned and allowed out" onClick={() => setTab('EXITED')}
+        />
+        <StatCard
+          icon={Icons.xCircle} label="Stopped" value={isLoading ? null : summary.DENIED} loading={isLoading}
+          tone={summary.DENIED > 0 ? 'danger' : 'neutral'} status={summary.DENIED > 0 ? 'Check why' : undefined}
+          hint="Not allowed out — see the reason" onClick={() => setTab('DENIED')}
+        />
+        <StatCard
+          icon={Icons.shieldCheck} label="All checks" value={isLoading ? null : summary.total} loading={isLoading}
+          tone="neutral" hint="Every scan recorded at the gate" onClick={() => setTab('ALL')}
+        />
+      </section>
 
-      <div className={styles.card}>
-        <div className={styles.cardHeader}><h3 className={styles.cardTitle}>Gate Activity Log</h3></div>
-        {isLoading ? (
-          <div className={styles.loadingState}><div className={styles.skeleton} /><div className={styles.skeleton} /></div>
-        ) : fetchError ? (
-          <div className={styles.emptyRow}>{fetchError}</div>
+      <Card
+        className={styles.section}
+        icon={Icons.hourglass}
+        title="Waiting at the gate"
+        subtitle={isLoading ? 'Loading…' : pending.length ? `${pending.length} approved ${pending.length === 1 ? 'request is' : 'requests are'} ready to leave` : 'Nobody is waiting right now'}
+        padded={false}
+      >
+        {isLoading ? <LoadingRows rows={2} /> : pending.length === 0 ? (
+          <EmptyState icon={Icons.checkCircle} title="No trucks waiting" message="Approved outgoing trucks will appear here until they’re scanned at the gate." />
+        ) : (
+          <DataTable
+            dense
+            caption="Approved requests waiting at the gate"
+            rows={pending}
+            defaultSort={{ key: 'approvedAt', dir: 'asc' }}
+            columns={[
+              {
+                key: 'dispatchNumber', header: 'Request', primary: true,
+                render: (d) => (
+                  <>
+                    <span className={uiStyles.strong}>{d.lot?.material?.materialName || 'Material'}</span>
+                    <span className={uiStyles.sub}><span className={uiStyles.mono}>{d.dispatchNumber}</span> · batch {d.lot?.lotCode}</span>
+                  </>
+                ),
+              },
+              { key: 'bay', header: 'From spot', sortValue: (d) => d.bay?.bayCode, render: (d) => <span className={uiStyles.mono}>{d.bay?.bayCode || '—'}</span> },
+              { key: 'approvedAt', header: 'Approved', sortValue: (d) => new Date(d.approvedAt).getTime(), render: (d) => <span className={uiStyles.muted}>{fmt(d.approvedAt)}</span> },
+            ]}
+          />
+        )}
+      </Card>
+
+      <Tabs
+        tabs={TABS.map((t) => ({ ...t, count: isLoading ? undefined : t.value === 'ALL' ? records.length : records.filter((r) => r.validationStatus === t.value).length }))}
+        value={tab}
+        onChange={setTab}
+        ariaLabel="Filter gate checks"
+      />
+
+      <Card
+        icon={Icons.history}
+        title="Gate activity"
+        subtitle="Every scan at the exit gate, newest first"
+        padded={false}
+        actions={<SearchInput className={styles.search} value={search} onChange={setSearch} placeholder="Search batch, request or spot" />}
+      >
+        {isLoading ? <LoadingRows rows={4} /> : fetchError ? (
+          <ErrorState title="We couldn’t load gate activity" error={fetchError} onRetry={loadAll} />
         ) : filtered.length === 0 ? (
-          <div className={styles.emptyRow}>No gate validation records{tab !== 'ALL' ? ` (${tab.toLowerCase()})` : ''} yet.</div>
+          <EmptyState
+            icon={search ? Icons.search : Icons.gate}
+            title={search ? 'Nothing matches your search' : 'No gate checks yet'}
+            message={search ? 'Try a batch code or request number.' : 'Each time a truck is scanned at the exit, it will be recorded here.'}
+            action={search ? <Button onClick={() => setSearch('')}>Clear search</Button> : scanButton}
+          />
         ) : (
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead><tr><th>Lot</th><th>Material</th><th>Dispatch #</th><th>Bay</th><th>Decision</th><th>Time</th><th>Note</th></tr></thead>
-              <tbody>
-                {filtered.map((r) => (
-                  <tr key={r.id}>
-                    <td>{r.lot?.lotCode}</td>
-                    <td className={styles.nameCell}>{r.lot?.material?.materialName || '—'}</td>
-                    <td><span className={styles.code}>{r.dispatch?.dispatchNumber}</span></td>
-                    <td><span className={styles.bayChip}>{r.bay?.bayCode}</span></td>
-                    <td><StatusBadge status={r.validationStatus} /></td>
-                    <td className={styles.muted}>{fmt(r.gateExitTime || r.createdAt)}</td>
-                    <td className={styles.note} title={r.remarks || ''}>{r.remarks || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            caption="Gate activity"
+            rows={filtered}
+            defaultSort={{ key: 'time', dir: 'desc' }}
+            rowTone={(r) => (r.validationStatus === 'DENIED' ? 'danger' : undefined)}
+            columns={[
+              {
+                key: 'lot', header: 'Batch', primary: true, sortValue: (r) => r.lot?.lotCode,
+                render: (r) => (
+                  <>
+                    <span className={uiStyles.strong}>{r.lot?.material?.materialName || 'Material'}</span>
+                    <span className={uiStyles.sub}>batch <span className={uiStyles.mono}>{r.lot?.lotCode}</span></span>
+                  </>
+                ),
+              },
+              { key: 'dispatch', header: 'Request', sortValue: (r) => r.dispatch?.dispatchNumber, render: (r) => <span className={uiStyles.mono}>{r.dispatch?.dispatchNumber || '—'}</span> },
+              { key: 'bay', header: 'Spot', sortValue: (r) => r.bay?.bayCode, hideOnMobile: true, render: (r) => <span className={uiStyles.mono}>{r.bay?.bayCode || '—'}</span> },
+              { key: 'validationStatus', header: 'Result', render: (r) => <StatusBadge status={r.validationStatus} size="sm" /> },
+              { key: 'time', header: 'Time', sortValue: (r) => new Date(r.gateExitTime || r.createdAt).getTime(), render: (r) => <span className={uiStyles.muted}>{fmt(r.gateExitTime || r.createdAt)}</span> },
+              { key: 'remarks', header: 'Note', sortable: false, render: (r) => <span className={styles.note} title={r.remarks || ''}>{r.remarks || '—'}</span> },
+            ]}
+          />
         )}
-      </div>
+      </Card>
 
       <GateScanModal isOpen={scanOpen} lots={lots} onClose={() => setScanOpen(false)} onDone={handleScanDone} />
-    </div>
-  );
-}
-
-function StatCard({ label, value, color }) {
-  return (
-    <div className={styles.statCard} style={{ '--stat-color': color }}>
-      <span className={styles.statValue}>{value}</span>
-      <span className={styles.statLabel}>{label}</span>
     </div>
   );
 }

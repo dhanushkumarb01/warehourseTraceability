@@ -1,8 +1,8 @@
 /**
- * Dispatch Page — dispatch dashboard + workflow.
+ * Dispatch Page ("Outgoing trucks") — dispatch dashboard + workflow.
  *
- * Stats strip (Pending/Approved/Rejected/Completed/Cancelled), status tabs,
- * the dispatch table, create-request workflow and the detail/approval modal.
+ * KPI cards (waiting / approved / completed / stopped), status tabs, the
+ * dispatch table, create-request workflow and the detail/approval modal.
  *
  * Reuses existing services — active inventory feeds the create modal's lot
  * picker so only mapped lots can be dispatched.
@@ -21,10 +21,28 @@ import StatusBadge from '../../components/StatusBadge/StatusBadge';
 import Toast from '../../components/Toast/Toast';
 import DispatchFormModal from '../../components/DispatchFormModal/DispatchFormModal';
 import DispatchDetailModal from '../../components/DispatchDetailModal/DispatchDetailModal';
+import {
+  PageHeader, StatCard, Tabs, Button, IconButton, SearchInput, DataTable, LoadingRows, ErrorState, EmptyState,
+} from '../../components/ui';
+import { Icons } from '../../components/ui/icons';
+import { uiStyles } from '../../components/ui/styles';
 import styles from './Dispatch.module.css';
 
-const TABS = ['ALL', 'PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'];
+const TABS = [
+  { value: 'ALL', label: 'All' },
+  { value: 'PENDING', label: 'Waiting for approval' },
+  { value: 'APPROVED', label: 'Approved' },
+  { value: 'COMPLETED', label: 'Completed' },
+  { value: 'REJECTED', label: 'Rejected' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+];
 const fmt = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+
+const ACTION_TOAST = {
+  approved: 'Approved. The truck can now go to the exit gate.',
+  rejected: 'Request rejected. The batch stays in storage.',
+  cancelled: 'Request cancelled.',
+};
 
 function Dispatch() {
   const { can } = useAuth();
@@ -36,6 +54,7 @@ function Dispatch() {
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [tab, setTab] = useState('ALL');
+  const [search, setSearch] = useState('');
 
   const [toast, setToast] = useState({ message: '', type: '' });
   const showToast = (message, type = 'info') => setToast({ message, type });
@@ -58,7 +77,7 @@ function Dispatch() {
       ]);
       setDispatches(list); setSummary(sum); setInventory(inv);
     } catch (err) {
-      setFetchError(err.message || 'Failed to load dispatches.');
+      setFetchError(err);
     } finally {
       setIsLoading(false);
     }
@@ -66,16 +85,19 @@ function Dispatch() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const filtered = useMemo(
-    () => (tab === 'ALL' ? dispatches : dispatches.filter((d) => d.dispatchStatus === tab)),
-    [dispatches, tab]
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return dispatches
+      .filter((d) => tab === 'ALL' || d.dispatchStatus === tab)
+      .filter((d) => !q || [d.dispatchNumber, d.lot?.lotCode, d.lot?.material?.materialName, d.bay?.bayCode]
+        .some((v) => v && String(v).toLowerCase().includes(q)));
+  }, [dispatches, tab, search]);
 
   const handleCreate = async (payload) => {
     setIsSubmitting(true); setFormError(null);
     try {
       await createDispatch(payload);
-      showToast('Dispatch request created.', 'success');
+      showToast('Request sent. A supervisor will approve it before the truck can leave.', 'success');
       setFormOpen(false);
       loadAll();
     } catch (err) {
@@ -90,7 +112,7 @@ function Dispatch() {
     try {
       const updated = await fn();
       setDetail(updated);
-      showToast(`Dispatch ${label}.`, 'success');
+      showToast(ACTION_TOAST[label] || `Dispatch ${label}.`, 'success');
       loadAll();
     } catch (err) {
       setActionError(err.message || `Failed to ${label} dispatch.`);
@@ -99,82 +121,95 @@ function Dispatch() {
     }
   };
 
+  const openNew = () => { setFormError(null); setFormOpen(true); };
+  const tabs = TABS.map((t) => ({ ...t, count: isLoading ? undefined : t.value === 'ALL' ? dispatches.length : summary[t.value] }));
+  const stopped = (summary.REJECTED || 0) + (summary.CANCELLED || 0);
+
   return (
     <div className={styles.page}>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: '' })} />
 
-      <div className={styles.pageHeader}>
-        <div className={styles.pageHeaderLeft}>
-          <div className={styles.pageIcon}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H3m10 11h6m0 0V9.5a1 1 0 00-.293-.707l-2.5-2.5A1 1 0 0015.5 6H13" /></svg>
-          </div>
-          <div>
-            <h1 className={styles.pageTitle}>Dispatch</h1>
-            <p className={styles.pageBreadcrumb}>Request, approve and track material dispatches</p>
-          </div>
+      <PageHeader
+        icon={Icons.truckOut}
+        title="Outgoing trucks"
+        term="Dispatch"
+        subtitle="Ask to send a batch out, get it approved, and follow it to the exit gate."
+        actions={(
+          <>
+            <IconButton icon={Icons.refresh} label="Refresh" variant="outline" onClick={loadAll} disabled={isLoading} />
+            {canCreate && <Button variant="primary" icon={Icons.plus} onClick={openNew}>New request</Button>}
+          </>
+        )}
+      />
+
+      <section className={styles.kpis} aria-label="Outgoing summary">
+        <StatCard
+          icon={Icons.hourglass} label="Waiting for approval" value={isLoading ? null : summary.PENDING} loading={isLoading}
+          tone={summary.PENDING > 0 ? 'warning' : 'neutral'} status={summary.PENDING > 0 ? 'Needs a supervisor' : undefined}
+          hint={canApprove ? 'You can approve these' : 'A supervisor approves these'}
+          onClick={() => setTab('PENDING')}
+        />
+        <StatCard
+          icon={Icons.checkCircle} label="Approved" value={isLoading ? null : summary.APPROVED} loading={isLoading}
+          tone="info" hint="Cleared to load and leave" onClick={() => setTab('APPROVED')}
+        />
+        <StatCard
+          icon={Icons.check} label="Completed" value={isLoading ? null : summary.COMPLETED} loading={isLoading}
+          tone="success" hint="Left through the exit gate" onClick={() => setTab('COMPLETED')}
+        />
+        <StatCard
+          icon={Icons.ban} label="Stopped" value={isLoading ? null : stopped} loading={isLoading}
+          tone="neutral" hint={`${summary.REJECTED || 0} rejected · ${summary.CANCELLED || 0} cancelled`}
+          onClick={() => setTab('REJECTED')}
+          help="Requests that were rejected by a supervisor or cancelled by the requester."
+        />
+      </section>
+
+      <Tabs tabs={tabs} value={tab} onChange={setTab} ariaLabel="Filter by status" />
+
+      <div className={uiStyles.card}>
+        <div className={styles.toolbar}>
+          <SearchInput className={styles.search} value={search} onChange={setSearch} placeholder="Search request, batch, material or spot" />
+          {!isLoading && <span className={uiStyles.muted}>{filtered.length} {filtered.length === 1 ? 'request' : 'requests'}</span>}
         </div>
-        <div className={styles.headerActions}>
-          {canCreate && (
-            <button className={styles.primaryBtn} onClick={() => { setFormError(null); setFormOpen(true); }}>
-              <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
-              New Request
-            </button>
-          )}
-          <button className={styles.refreshBtn} onClick={loadAll} disabled={isLoading} title="Refresh">
-            <svg viewBox="0 0 20 20" fill="currentColor" className={isLoading ? styles.spinning : ''}><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
-          </button>
-        </div>
-      </div>
 
-      <div className={styles.statsStrip}>
-        <StatCard label="Pending" value={isLoading ? '—' : summary.PENDING} color="#ca8a04" />
-        <StatCard label="Approved" value={isLoading ? '—' : summary.APPROVED} color="#2563eb" />
-        <StatCard label="Completed" value={isLoading ? '—' : summary.COMPLETED} color="#16a34a" />
-        <StatCard label="Rejected" value={isLoading ? '—' : summary.REJECTED} color="#dc2626" />
-        <StatCard label="Cancelled" value={isLoading ? '—' : summary.CANCELLED} color="#64748b" />
-      </div>
-
-      <div className={styles.tabs}>
-        {TABS.map((t) => (
-          <button key={t} className={`${styles.tab} ${tab === t ? styles.tabActive : ''}`} onClick={() => setTab(t)}>
-            {t.charAt(0) + t.slice(1).toLowerCase()}
-          </button>
-        ))}
-      </div>
-
-      <div className={styles.card}>
-        {isLoading ? (
-          <div className={styles.loadingState}><div className={styles.skeleton} /><div className={styles.skeleton} /><div className={styles.skeleton} /></div>
-        ) : fetchError ? (
-          <div className={styles.errorState}><p>{fetchError}</p><button className={styles.retryBtn} onClick={loadAll}>Try Again</button></div>
+        {isLoading ? <LoadingRows rows={5} /> : fetchError ? (
+          <ErrorState title="We couldn’t load outgoing trucks" error={fetchError} onRetry={loadAll} />
         ) : filtered.length === 0 ? (
-          <div className={styles.emptyState}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1"><path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H3m10 11h6" /></svg>
-            <p className={styles.emptyTitle}>No dispatches{tab !== 'ALL' ? ` in ${tab.toLowerCase()}` : ''}</p>
-            <p className={styles.emptySubtitle}>Create a dispatch request to get started.</p>
-          </div>
+          search ? (
+            <EmptyState icon={Icons.search} title="Nothing matches your search" message="Try a request number, batch code or material name." action={<Button onClick={() => setSearch('')}>Clear search</Button>} />
+          ) : (
+            <EmptyState
+              icon={Icons.truckOut}
+              title={tab === 'ALL' ? 'No outgoing requests yet' : `Nothing ${TABS.find((t) => t.value === tab).label.toLowerCase()}`}
+              message={tab === 'ALL' ? 'When material needs to leave the yard, start a request here.' : 'Requests with this status will show up here.'}
+              action={canCreate && tab === 'ALL' && <Button variant="primary" icon={Icons.plus} onClick={openNew}>New request</Button>}
+            />
+          )
         ) : (
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr><th>Dispatch #</th><th>Lot</th><th>Material</th><th>Qty</th><th>Bay</th><th>Status</th><th>Requested</th><th></th></tr>
-              </thead>
-              <tbody>
-                {filtered.map((d) => (
-                  <tr key={d.id} className={styles.clickable} onClick={() => { setActionError(null); setDetail(d); }}>
-                    <td><span className={styles.code}>{d.dispatchNumber}</span></td>
-                    <td>{d.lot?.lotCode}</td>
-                    <td className={styles.nameCell}>{d.lot?.material?.materialName || '—'}</td>
-                    <td>{d.approvedQuantity ?? d.requestedQuantity} {d.lot?.unit}</td>
-                    <td><span className={styles.bayChip}>{d.bay?.bayCode}</span></td>
-                    <td><StatusBadge status={d.dispatchStatus} /></td>
-                    <td className={styles.muted}>{fmt(d.createdAt)}</td>
-                    <td className={styles.chev}>›</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            caption="Outgoing truck requests"
+            rows={filtered}
+            defaultSort={{ key: 'createdAt', dir: 'desc' }}
+            onRowClick={(d) => { setActionError(null); setDetail(d); }}
+            rowTone={(d) => (d.dispatchStatus === 'PENDING' ? 'warning' : undefined)}
+            columns={[
+              {
+                key: 'dispatchNumber', header: 'Request', primary: true,
+                render: (d) => (
+                  <>
+                    <span className={uiStyles.strong}>{d.lot?.material?.materialName || 'Material'}</span>
+                    <span className={uiStyles.sub}><span className={uiStyles.mono}>{d.dispatchNumber}</span> · batch {d.lot?.lotCode}</span>
+                  </>
+                ),
+              },
+              { key: 'qty', header: 'Quantity', align: 'right', sortValue: (d) => Number(d.approvedQuantity ?? d.requestedQuantity), render: (d) => <span className="wt-num">{d.approvedQuantity ?? d.requestedQuantity} {d.lot?.unit}</span> },
+              { key: 'bay', header: 'From spot', sortValue: (d) => d.bay?.bayCode, render: (d) => <span className={uiStyles.mono}>{d.bay?.bayCode || '—'}</span> },
+              { key: 'dispatchStatus', header: 'Status', render: (d) => <StatusBadge status={d.dispatchStatus} size="sm" /> },
+              { key: 'createdAt', header: 'Requested', sortValue: (d) => new Date(d.createdAt).getTime(), render: (d) => <span className={uiStyles.muted}>{fmt(d.createdAt)}</span> },
+              { key: 'open', header: '', sortable: false, hideOnMobile: true, width: 40, render: () => <span className={styles.chev}>{Icons.chevronRight}</span> },
+            ]}
+          />
         )}
       </div>
 
@@ -199,15 +234,6 @@ function Dispatch() {
         onReject={(p) => runAction(() => rejectDispatch(detail.id, p), 'rejected')}
         onCancel={(p) => runAction(() => cancelDispatch(detail.id, p), 'cancelled')}
       />
-    </div>
-  );
-}
-
-function StatCard({ label, value, color }) {
-  return (
-    <div className={styles.statCard} style={{ '--stat-color': color }}>
-      <span className={styles.statValue}>{value}</span>
-      <span className={styles.statLabel}>{label}</span>
     </div>
   );
 }

@@ -1,49 +1,49 @@
+/* Legend card (floats bottom-right over the map) */
 .legend {
-  position: absolute;
-  bottom: 28px;
-  left: 16px;
-  z-index: 500;
-  background: #ffffff;
-  border-radius: 10px;
-  padding: 12px 14px;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
-  border: 1px solid #e2e8f0;
-  min-width: 120px;
+  position: absolute; right: 16px; bottom: 16px; z-index: 500; width: 300px; max-width: calc(100% - 32px);
+  border-radius: var(--r-xl); background: var(--c-surface-glass); border: 1px solid var(--c-border-strong);
+  box-shadow: var(--sh-lg); backdrop-filter: blur(16px) saturate(1.2); overflow: hidden;
+  animation: wt-fade-up var(--d-slow) var(--ease-out) both;
 }
-
-.title {
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  margin: 0 0 8px;
+.legendClosed { width: auto; }
+.head {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 14px; border: none; background: none; text-align: left;
 }
+.title { font-size: var(--fs-md); font-weight: 650; color: var(--c-heading); }
+.total { font-size: var(--fs-xs); color: var(--c-text-muted); margin-left: auto; white-space: nowrap; }
+.chev { display: inline-flex; color: var(--c-text-muted); transition: transform var(--t-fast); }
+.chev svg { width: 16px; height: 16px; }
+.chevOpen { transform: rotate(180deg); }
 
-.list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.list { list-style: none; padding: 0 8px; display: flex; flex-direction: column; gap: 2px; }
+.row {
+  --sw: var(--c-text-soft);
+  display: grid; grid-template-columns: 22px 1fr auto; grid-template-areas: 'sw label count' 'bar bar pct';
+  align-items: center; gap: 4px 8px; width: 100%; padding: 8px 8px; border: 1px solid transparent; border-radius: var(--r-md);
+  background: none; text-align: left; transition: background var(--t-fast), opacity var(--t-fast);
 }
+.row:hover { background: var(--c-hover); }
+.rowActive { background: var(--c-brand-tint); border-color: var(--c-brand-border); }
+.rowDim { opacity: 0.5; }
+.free { --sw: var(--c-occ-free); }
+.full { --sw: var(--c-occ-full); }
+.off { --sw: var(--c-occ-off); }
+.swatch { grid-area: sw; display: inline-flex; color: var(--sw); }
+.swatch svg { width: 18px; height: 18px; }
+.label { grid-area: label; font-size: var(--fs-sm); font-weight: 600; color: var(--c-text); }
+.count { grid-area: count; font-size: var(--fs-md); font-weight: 700; color: var(--c-heading); }
+.bar { grid-area: bar; height: 6px; border-radius: var(--r-pill); background: var(--c-surface-raised); overflow: hidden; margin-left: 30px; }
+.bar > span { display: block; height: 100%; border-radius: inherit; background: var(--sw); transition: width var(--d-slow) var(--ease-out); }
+.off .bar > span { background: repeating-linear-gradient(135deg, var(--sw) 0 4px, transparent 4px 7px); }
+.pct { grid-area: pct; font-size: var(--fs-xs); font-weight: 600; color: var(--c-text-muted); min-width: 34px; text-align: right; }
+.foot { padding: 8px 16px 12px; font-size: var(--fs-xs); color: var(--c-text-muted); }
+.reset { border: none; background: none; padding: 0; color: var(--c-brand-fg); font-weight: 650; text-decoration: underline; }
 
-.item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+/* Leaflet tooltip content */
+.tipCode { display: block; font-size: var(--fs-sm); font-weight: 700; color: var(--c-heading); }
+.tipMeta { display: block; font-size: var(--fs-xs); font-weight: 500; color: var(--c-text-muted); }
+.zoneLabel { font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-text); }
 
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.label {
-  font-size: 0.78rem;
-  color: #374151;
-  font-weight: 500;
+@media (max-width: 768px) {
+  .legend { position: static; width: 100%; max-width: none; margin-top: 12px; }
 }

@@ -1,370 +1,44 @@
-/* ── Layout Container ─────────────────────────────────────────────────────── */
 .layout {
-  padding: 24px 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  /* Tighter gap between multiple zones */
-  overflow-y: auto;
-  height: 100%;
-  background-color: #f8fafc;
-  /* Light theme background */
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  position: absolute; inset: 0; overflow-y: auto; padding: 20px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; align-content: start;
 }
 
-/* ── Empty State ─────────────────────────────────────────────────────────── */
-.empty {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: #94a3b8;
-}
-
-.empty svg {
-  width: 56px;
-  height: 56px;
-}
-
-.emptyTitle {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #334155;
-  margin: 0;
-}
-
-.emptySubtitle {
-  font-size: 0.82rem;
-  color: #64748b;
-  margin: 0;
-}
-
-/* ── Zone Section ────────────────────────────────────────────────────────── */
 .zone {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  width: 100%;
-  max-width: 1200px;
-  padding: 20px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: var(--r-xl);
+  background: var(--c-surface-2); border: 1px solid var(--c-border);
 }
+.zoneHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.zoneTitles { min-width: 0; }
+.zoneName { font-size: var(--fs-lg); font-weight: 700; color: var(--c-heading); }
+.zoneMeta { font-size: var(--fs-xs); color: var(--c-text-muted); margin-top: 2px; }
+.zoneFill { display: flex; align-items: baseline; gap: 4px; flex-shrink: 0; }
+.zonePct { font-size: var(--fs-xl); font-weight: 750; color: var(--c-heading); letter-spacing: -0.02em; }
+.zonePctLabel { font-size: var(--fs-xs); color: var(--c-text-muted); }
+.zoneFree { font-size: var(--fs-xs); color: var(--c-text-muted); }
+.zoneFree strong { color: var(--c-heading); font-weight: 700; font-variant-numeric: tabular-nums; }
 
-.zoneHeader {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding-bottom: 16px;
-  margin-bottom: 12px;
-  background: transparent;
-  flex-wrap: wrap;
-  gap: 24px;
-  /* This gap now separates 'ZONE A' from the status dots */
-}
+.bayGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin-top: 4px; }
 
-.zoneHeaderLeft {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.zoneName {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #0f172a;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  margin: 0;
-  /* Ensures no default margin breaks the line */
-}
-
-.zoneCount {
-  display: none;
-}
-
-/* Legend */
-.zoneMini {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 0;
-  /* REMOVED margin-top so it stays on the same line */
-  flex-wrap: wrap;
-}
-
-.miniAvail,
-.miniOccup,
-.miniInact {
-  background: transparent;
-  color: #475569;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 0;
-}
-
-/* Legend Dots */
-.miniOccup::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #10b981;
-}
-
-.miniAvail::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #94a3b8;
-}
-
-.miniInact::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #f59e0b;
-}
-
-.miniAvail::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #94a3b8;
-}
-
-.miniInact::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #f59e0b;
-}
-
-/* ── Bay Grid ────────────────────────────────────────────────────────────── */
-.bayGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 12px;
-  padding: 0;
-}
-
-/* ── Bay Block ───────────────────────────────────────────────────────────── */
 .bayBlock {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 12px 8px;
-  background: #f8fafc;
-  /* Very light gray default */
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  cursor: pointer;
-  text-align: center;
-  transition: all 0.2s ease-in-out;
-  min-height: 70px;
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0;
+  padding: 10px; border-radius: var(--r-md); text-align: left;
+  background: color-mix(in srgb, var(--bay-colour) 10%, var(--c-surface));
+  border: 1px solid color-mix(in srgb, var(--bay-colour) 38%, transparent);
+  box-shadow: inset 0 3px 0 var(--bay-colour);
+  transition: transform var(--t-fast), box-shadow var(--t-fast), border-color var(--t-fast);
 }
-
-.bayBlock:hover {
-  border-color: #3b82f6;
-  background: #f1f5f9;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-}
-
-/* Status Dot Indicator */
-.bayBlock::after {
-  content: '';
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #94a3b8;
-  /* Default Gray Dot */
-}
-
-/* Hide old accent stripe */
-.bayAccent {
-  display: none;
-}
-
-/* ── Bay Block States ────────────────────────────────────────────────────── */
-
-.bayBlockOccupied {
-  background: #e0f2fe;
-  /* Soft blue tint */
-  border-color: #bae6fd;
-}
-
-.bayBlockOccupied:hover {
-  background: #bae6fd;
-}
-
-.bayBlockOccupied::after {
-  background: #10b981;
-  /* Green Dot */
-}
-
-.bayBlockEmpty {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
-
-.bayBlockEmpty::after {
-  background: #94a3b8;
-  /* Gray Dot */
-}
-
-.bayBlockSelected {
-  background: #fffbeb !important;
-  /* Soft yellow/orange */
-  border-color: #f59e0b !important;
-  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15) !important;
-  transform: translateY(-2px);
-}
-
-.bayBlockSelected::after {
-  background: #10b981;
-}
-
-/* ── Typography inside Blocks ────────────────────────────────────────────── */
-.bayCode {
-  font-family: inherit;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #0f172a;
-  /* Darkest slate */
-  background: transparent;
-  border-radius: 0;
-  padding: 0;
-  margin: 0;
-}
-
-.bayName {
-  font-size: 0.65rem;
-  color: #64748b;
-  /* Medium gray */
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  line-height: 1;
-  margin-bottom: 2px;
-}
-
-/* Base style for pill badges */
-.bayStatus {
-  font-size: 0.6rem;
-  padding: 2px 8px;
-  font-weight: 700;
-}
-
-/* Darken text when selected for contrast */
-.bayBlockSelected .bayCode,
-.bayBlockSelected .bayName,
-.bayBlockSelected .bayStatus {
-  color: #92400e;
-  /* Dark burnt orange */
-}
-
-.bayQr {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  color: #16a34a;
-  background: #dcfce7;
-  padding: 3px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-}
-
-.bayQr svg {
-  width: 12px;
-  height: 12px;
-}
-
-
-/* ── Responsive Adjustments ──────────────────────────────────────────────── */
-@media (max-width: 1024px) {
-  .bayGrid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-@media (max-width: 900px) {
-  .layout {
-    padding: 16px;
-  }
-
-  .zone {
-    padding: 16px;
-  }
-}
+.bayBlock:hover { transform: translateY(-1px); border-color: var(--bay-colour); }
+.bayOff { border-style: dashed; background: repeating-linear-gradient(135deg, var(--c-surface) 0 6px, var(--c-surface-2) 6px 12px); }
+.bayBlockSelected { border-color: var(--c-heading); box-shadow: inset 0 3px 0 var(--bay-colour), 0 0 0 3px var(--c-brand-tint), var(--c-brand-glow); }
+.bayTop { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 4px; }
+.bayCode { font-size: var(--fs-sm); font-weight: 750; color: var(--c-heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bayQr { display: inline-flex; color: var(--c-text-soft); }
+.bayQr svg { width: 13px; height: 13px; }
+.bayStatus { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 650; color: var(--c-text); }
+.bayIcon { display: inline-flex; color: var(--bay-colour); }
+.bayIcon svg { width: 13px; height: 13px; }
+.bayLots { font-size: var(--fs-xs); color: var(--c-text-muted); font-variant-numeric: tabular-nums; }
 
 @media (max-width: 768px) {
-  .bayGrid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+  .layout { position: static; padding: 12px; grid-template-columns: 1fr; }
 }
-
-@media (max-width: 480px) {
-  .bayGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .zoneMini {
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-  }
-}
-/* ── Phase 5 – inventory occupancy ────────────────────────────────────────── */
-.zoneLots {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: #2563eb;
-  background: #eff6ff;
-  padding: 2px 9px;
-  border-radius: 20px;
-}
-.lotSlotFilled {
-  display: inline-block;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #b45309;
-  background: #fef3c7;
-  padding: 2px 8px;
-  border-radius: 6px;
-}
-
-.bayMaterial { margin-top: 8px; }
-.futureSlot {
-  display: inline-block;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: #94a3b8;
-  background: #f1f5f9;
-  padding: 2px 8px;
-  border-radius: 6px;
-}
-
-/* ── Ops-center polish (Phase 9) ─────────────────────────────────────────── */
-.zone { animation: wt-fade-up 0.4s var(--ease-out) both; }
-.bayBlock { transition: transform var(--t-fast), box-shadow var(--t-fast), border-color var(--t-fast); }
-.bayBlock:hover { transform: translateY(-3px); box-shadow: var(--sh-md); }

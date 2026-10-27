@@ -18,6 +18,9 @@
 
 import { useState, useRef, useEffect } from 'react';
 import LiveStreamPlayer from '../LiveStreamPlayer/LiveStreamPlayer';
+import { Button } from '../ui';
+import { Icons } from '../ui/icons';
+import { uiStyles } from '../ui/styles';
 import styles from './ZoneEditor.module.css';
 
 const BOUNDARY_ZONE_TYPES = ['BOUNDARY', 'RESTRICTED', 'PARKING', 'LOADING', 'WEIGHBRIDGE'];
@@ -77,22 +80,22 @@ function ZoneEditor({ camera, zones = [], canManage = false, onSave, fixedType =
             <circle key={i} cx={p[0] * 100} cy={p[1] * 100} r="1.1" className={styles.vertex} vectorEffect="non-scaling-stroke" />
           ))}
         </svg>
-        <span className={styles.hint}>{canManage ? (points.length === 0 ? 'Click to place boundary points' : `${points.length} point${points.length > 1 ? 's' : ''} — min 3`) : 'Read-only'}</span>
+        <span className={styles.hint}>{canManage ? (points.length === 0 ? 'Click on the picture to mark the corners' : `${points.length} corner${points.length > 1 ? 's' : ''} marked — at least 3 needed`) : 'View only'}</span>
       </div>
 
       {canManage && (
         <div className={styles.controls}>
-          <input className={styles.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="Zone name" />
+          <input className={`${uiStyles.input} ${styles.input}`} value={name} onChange={(e) => setName(e.target.value)} placeholder="Area name" aria-label="Area name" />
           {!fixedType && (
-            <select className={styles.input} value={type} onChange={(e) => setType(e.target.value)}>
+            <select className={`${uiStyles.input} ${styles.input}`} value={type} onChange={(e) => setType(e.target.value)} aria-label="Area type">
               {BOUNDARY_ZONE_TYPES.map((t) => <option key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</option>)}
             </select>
           )}
-          <button className={styles.ghostBtn} onClick={undo} disabled={!points.length}>Undo</button>
-          <button className={styles.ghostBtn} onClick={clear} disabled={!points.length}>Clear</button>
-          <button className={styles.saveBtn} onClick={save} disabled={saving || (points.length > 0 && points.length < 3)}>
-            {saving ? 'Saving…' : points.length === 0 ? 'Remove boundary' : 'Save boundary'}
-          </button>
+          <Button variant="ghost" icon={Icons.arrowLeft} onClick={undo} disabled={!points.length}>Undo last point</Button>
+          <Button variant="ghost" icon={Icons.close} onClick={clear} disabled={!points.length}>Clear</Button>
+          <Button variant={points.length === 0 ? 'danger' : 'primary'} icon={Icons.check} onClick={save} loading={saving} disabled={points.length > 0 && points.length < 3}>
+            {points.length === 0 ? 'Remove area' : 'Save area'}
+          </Button>
         </div>
       )}
     </div>

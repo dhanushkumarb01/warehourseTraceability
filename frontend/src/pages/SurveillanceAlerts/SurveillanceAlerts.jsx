@@ -1,16 +1,14 @@
 /**
- * SurveillanceAlerts — the AI Surveillance dashboard (Phase 13).
+ * SurveillanceAlerts ("Alerts") — camera alerts and live detection.
  *
- * A professional, command-center view over the motion-detection module:
- *   - AI service status + summary metrics
- *   - Live camera feed with a real-time motion indicator
- *   - Active alerts (acknowledge / resolve / dismiss)
- *   - Alert history with filtering + pagination
+ *   - Detection service status + KPI cards (open, critical, today)
+ *   - Live camera with what the detector currently sees, in plain words
+ *   - Open alerts, each with one obvious next step (mark seen / resolve)
+ *   - Alert history with filters + pagination
  *   - Alert detail with snapshot evidence + detection details
  *
- * It reuses the existing streaming player, status badges, toasts and design
- * tokens, so it reads as a natural extension of the enterprise dashboard. It is
- * generic over alert type — future detectors surface here with no UI redesign.
+ * Generic over alert type — new detectors surface here with no redesign; the
+ * ALERT_TYPES map only supplies friendlier names.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -25,11 +23,27 @@ import { GROUPS } from '../../config/roles';
 import LiveStreamPlayer from '../../components/LiveStreamPlayer/LiveStreamPlayer';
 import StatusBadge from '../../components/StatusBadge/StatusBadge';
 import Toast from '../../components/Toast/Toast';
+import {
+  PageHeader, StatCard, Card, Button, SearchInput, DataTable, EmptyState, Modal, DetailList, StatusChip, Menu, Tooltip,
+} from '../../components/ui';
+import { Icons } from '../../components/ui/icons';
+import { uiStyles } from '../../components/ui/styles';
 import styles from './SurveillanceAlerts.module.css';
 
 const POLL_MS = 8000;
 const fmt = (d) => (d ? new Date(d).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const fmtTime = (d) => (d ? new Date(d).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—');
+
+const ALERT_TYPES = {
+  MOTION: 'Movement seen',
+  WALL_INTRUSION: 'Someone crossed the boundary',
+  MAN_INSIDE_WAGON: 'Person inside a wagon',
+  OVER_SPEED: 'Vehicle over the speed limit',
+  CANCELLED_VEHICLE: 'Cancelled vehicle seen',
+  FACE_DETECTION: 'Unknown person',
+};
+const typeLabel = (t) => ALERT_TYPES[t] || (t ? t.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase()) : 'Alert');
+const humanKey = (k) => k.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
 function SurveillanceAlerts() {
   const navigate = useNavigate();
@@ -39,6 +53,7 @@ function SurveillanceAlerts() {
   const [summary, setSummary] = useState(null);
   const [service, setService] = useState(null);
   const [active, setActive] = useState([]);
+  const [liveLoaded, setLiveLoaded] = useState(false);
   const [cameras, setCameras] = useState([]);
   const [selectedCam, setSelectedCam] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -46,6 +61,7 @@ function SurveillanceAlerts() {
   // history
   const [history, setHistory] = useState({ items: [], total: 0, page: 1, totalPages: 1 });
   const [filters, setFilters] = useState({ status: '', severity: '', alertType: '', search: '' });
+  const [searchText, setSearchText] = useState('');
   const [page, setPage] = useState(1);
 
   const [toast, setToast] = useState({ message: '', type: 'info' });
@@ -59,7 +75,7 @@ function SurveillanceAlerts() {
         fetchAlertSummary(), fetchServiceStatus(), fetchAlerts({ active: 'true', pageSize: 30 }),
       ]);
       setSummary(sum); setService(svc); setActive(act.items);
-    } catch { /* transient */ }
+    } catch { /* transient */ } finally { setLiveLoaded(true); }
   }, []);
 
   const loadHistory = useCallback(async () => {
@@ -83,178 +99,190 @@ function SurveillanceAlerts() {
   useEffect(() => { loadHistory(); }, [loadHistory]);
   useEffect(() => { setPage(1); }, [filters]);
 
+  const ACT_TOAST = { acknowledged: 'Marked as seen.', resolved: 'Alert resolved.', dismissed: 'Alert dismissed as a false alarm.' };
   const act = async (fn, id, label) => {
-    try { await fn(id); showToast(`Alert ${label}.`, 'success'); loadLive(); loadHistory(); if (detail?.id === id) setDetail(null); }
+    try { await fn(id); showToast(ACT_TOAST[label] || `Alert ${label}.`, 'success'); loadLive(); loadHistory(); if (detail?.id === id) setDetail(null); }
     catch (err) { showToast(err.response?.data?.message || err.message || 'Action failed.', 'error'); }
   };
 
-  const onSearch = (e) => {
-    const v = e.target.value;
+  const onSearch = (v) => {
+    setSearchText(v);
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => setFilters((f) => ({ ...f, search: v })), 300);
   };
+  const setFilter = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
+  const filterCount = [filters.status, filters.severity, filters.alertType, filters.search].filter(Boolean).length;
 
   const liveMotion = service?.cameras?.find((c) => c.cameraId === selectedCam?.id);
   const serviceOnline = service?.online;
+  const critical = summary?.severity?.CRITICAL ?? 0;
+
+  const signals = liveMotion ? [
+    liveMotion.motion ? { tone: 'warning', text: 'Movement' } : { tone: 'success', text: 'No movement' },
+    liveMotion.intrusion && { tone: 'danger', text: 'Boundary crossed' },
+    !liveMotion.intrusion && liveMotion.persons > 0 && { tone: 'info', text: `${liveMotion.persons} ${liveMotion.persons === 1 ? 'person' : 'people'}` },
+    liveMotion.wagon > 0 && { tone: 'danger', text: `Person in wagon${liveMotion.wagon > 1 ? ` (${liveMotion.wagon})` : ''}` },
+    liveMotion.vehicles > 0 && {
+      tone: liveMotion.speedLimit && liveMotion.maxSpeedKmh > liveMotion.speedLimit ? 'danger' : 'info',
+      text: `Vehicle ${liveMotion.maxSpeedKmh || 0} km/h${liveMotion.speedLimit ? ` (limit ${liveMotion.speedLimit})` : ''}`,
+    },
+    liveMotion.faces > 0 && (liveMotion.unknownFaces > 0
+      ? { tone: 'danger', text: `Unknown person${liveMotion.unknownFaces > 1 ? ` (${liveMotion.unknownFaces})` : ''}` }
+      : { tone: 'success', text: `${liveMotion.faces} recognised` }),
+  ].filter(Boolean) : [];
 
   return (
     <div className={styles.page}>
       <Toast message={toast.message} type={toast.type} onClose={clearToast} />
 
-      {/* Header */}
-      <div className={styles.header}>
-        <div className={styles.headerLeft}>
-          <div className={styles.pageIcon}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 00-4-5.7V5a2 2 0 10-4 0v.3A6 6 0 006 11v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-          </div>
-          <div>
-            <h1 className={styles.pageTitle}>AI Surveillance</h1>
-            <p className={styles.pageBreadcrumb}>Surveillance &rsaquo; Motion Detection &amp; Alerts</p>
-          </div>
-        </div>
-        <div className={`${styles.serviceBadge} ${serviceOnline ? styles.svcOnline : styles.svcOffline}`}>
-          <span className={styles.svcDot} />
-          <div>
-            <span className={styles.svcLabel}>AI Service {serviceOnline ? 'Online' : 'Offline'}</span>
-            <span className={styles.svcMeta}>{service?.lastHeartbeatAt ? `Heartbeat ${fmtTime(service.lastHeartbeatAt)}` : 'No heartbeat yet'}</span>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        icon={Icons.bell}
+        title="Alerts"
+        term="Surveillance alerts"
+        subtitle="What the cameras have spotted, and what still needs someone to look at it."
+        actions={(
+          <Tooltip content={service?.lastHeartbeatAt ? `Last check-in ${fmtTime(service.lastHeartbeatAt)}` : 'The detection service hasn’t checked in yet'} side="bottom">
+            <span className={`${styles.serviceBadge} ${serviceOnline ? styles.svcOnline : styles.svcOffline}`} tabIndex={0}>
+              <span className={styles.svcDot} />
+              {serviceOnline ? 'Detection is running' : 'Detection is offline'}
+            </span>
+          </Tooltip>
+        )}
+      />
 
-      {/* Summary */}
-      <div className={styles.statsStrip}>
-        <Stat label="Active Alerts" value={summary?.active ?? 0} tone="danger" />
-        <Stat label="Today" value={summary?.today ?? 0} tone="info" />
-        <Stat label="Critical" value={summary?.severity?.CRITICAL ?? 0} tone="critical" />
-        <Stat label="High" value={summary?.severity?.HIGH ?? 0} tone="high" />
-        <Stat label="Total" value={summary?.total ?? 0} tone="muted" />
-      </div>
+      {!liveLoaded ? null : !serviceOnline && (
+        <div className={styles.offlineNote} role="note">
+          {Icons.wifiOff}
+          <span>The detection service isn’t running, so no new alerts will be raised. Ask your administrator to check it.</span>
+        </div>
+      )}
+
+      <section className={styles.kpis} aria-label="Alert summary">
+        <StatCard icon={Icons.bell} label="Open alerts" value={summary ? summary.active : null} loading={!liveLoaded}
+          tone={critical > 0 ? 'danger' : summary?.active > 0 ? 'warning' : 'success'}
+          status={summary ? (summary.active > 0 ? 'Needs a look' : 'All clear') : undefined}
+          hint="New or seen, but not resolved yet" help="Open means nobody has resolved or dismissed it yet." />
+        <StatCard icon={Icons.error} label="Critical" value={summary ? critical : null} loading={!liveLoaded}
+          tone={critical > 0 ? 'danger' : 'neutral'} hint="Check these straight away"
+          onClick={() => setFilters((f) => ({ ...f, severity: 'CRITICAL' }))} />
+        <StatCard icon={Icons.warning} label="High" value={summary ? summary.severity?.HIGH ?? 0 : null} loading={!liveLoaded}
+          tone="orange" hint="Check soon" onClick={() => setFilters((f) => ({ ...f, severity: 'HIGH' }))} />
+        <StatCard icon={Icons.calendar} label="Raised today" value={summary ? summary.today : null} loading={!liveLoaded}
+          tone="info" hint={`${summary?.total ?? '—'} recorded in total`} />
+      </section>
 
       <div className={styles.mainGrid}>
-        {/* Live feed */}
-        <section className={styles.livePanel}>
-          <div className={styles.panelHead}>
-            <h2 className={styles.panelTitle}>Live Camera</h2>
-            <select className={styles.camSelect} value={selectedCam?.id || ''} onChange={(e) => setSelectedCam(cameras.find((c) => c.id === e.target.value) || null)}>
+        <Card
+          icon={Icons.video}
+          title="What does the camera see now?"
+          padded={false}
+          actions={(
+            <select className={`${uiStyles.input} ${styles.camSelect}`} aria-label="Choose camera" value={selectedCam?.id || ''} onChange={(e) => setSelectedCam(cameras.find((c) => c.id === e.target.value) || null)}>
               {cameras.length === 0 && <option value="">No cameras</option>}
-              {cameras.map((c) => <option key={c.id} value={c.id}>{c.cameraName} — {c.location}</option>)}
+              {cameras.map((c) => <option key={c.id} value={c.id}>{c.cameraName}{c.location ? ` — ${c.location}` : ''}</option>)}
             </select>
-          </div>
+          )}
+        >
           <div className={styles.livePlayer}>
             {selectedCam
               ? <LiveStreamPlayer key={selectedCam.id} camera={selectedCam} />
-              : <div className={styles.noCam}>No cameras available</div>}
+              : <EmptyState icon={Icons.camera} title="No cameras yet" message="Add a camera to watch it here." />}
           </div>
           {selectedCam && (
             <div className={styles.motionBar}>
-              <span className={`${styles.motionState} ${liveMotion?.motion ? styles.motionOn : styles.motionClear}`}>
-                <span className={styles.motionDot} />
-                {liveMotion ? (liveMotion.motion ? 'MOTION DETECTED' : 'CLEAR') : 'NO AI SIGNAL'}
-              </span>
-              {liveMotion && (liveMotion.intrusion || liveMotion.persons > 0) && (
-                <span className={`${styles.motionState} ${liveMotion.intrusion ? styles.motionOn : styles.personInfo}`}>
-                  <span className={styles.motionDot} />
-                  {liveMotion.intrusion ? 'BOUNDARY BREACH' : `${liveMotion.persons} PERSON${liveMotion.persons === 1 ? '' : 'S'}`}
-                </span>
-              )}
-              {liveMotion && liveMotion.wagon > 0 && (
-                <span className={`${styles.motionState} ${styles.motionOn}`}>
-                  <span className={styles.motionDot} />
-                  {`WAGON OCCUPIED${liveMotion.wagon > 1 ? ` (${liveMotion.wagon})` : ''}`}
-                </span>
-              )}
-              {liveMotion && liveMotion.vehicles > 0 && (
-                <span className={`${styles.motionState} ${liveMotion.speedLimit && liveMotion.maxSpeedKmh > liveMotion.speedLimit ? styles.motionOn : styles.personInfo}`}>
-                  <span className={styles.motionDot} />
-                  {`${liveMotion.maxSpeedKmh || 0} km/h`}{liveMotion.speedLimit ? ` / ${liveMotion.speedLimit}` : ''}
-                </span>
-              )}
-              {liveMotion && liveMotion.faces > 0 && (
-                <span className={`${styles.motionState} ${liveMotion.unknownFaces > 0 ? styles.motionOn : styles.personInfo}`}>
-                  <span className={styles.motionDot} />
-                  {liveMotion.unknownFaces > 0
-                    ? `UNKNOWN PERSON${liveMotion.unknownFaces > 1 ? ` (${liveMotion.unknownFaces})` : ''}`
-                    : `${liveMotion.faces - liveMotion.unknownFaces} RECOGNISED`}
-                </span>
-              )}
+              {liveMotion
+                ? signals.map((sg) => <StatusChip key={sg.text} tone={sg.tone}>{sg.text}</StatusChip>)
+                : <StatusChip tone="neutral" icon={Icons.wifiOff}>No detection signal for this camera</StatusChip>}
               <span className={styles.motionMeta}>
                 {liveMotion?.fps != null && <span>{liveMotion.fps} fps</span>}
                 {liveMotion?.resolution && <span>{liveMotion.resolution}</span>}
-                <button className={styles.linkBtn} onClick={() => navigate(`/surveillance/cameras/${selectedCam.id}`)}>Camera details</button>
+                <Button size="sm" variant="ghost" iconRight={Icons.arrowRight} onClick={() => navigate(`/surveillance/cameras/${selectedCam.id}`)}>Camera details</Button>
               </span>
             </div>
           )}
-        </section>
+        </Card>
 
-        {/* Active alerts */}
-        <section className={styles.activePanel}>
-          <div className={styles.panelHead}>
-            <h2 className={styles.panelTitle}>Active Alerts</h2>
-            <span className={styles.count}>{active.length}</span>
-          </div>
-          <div className={styles.activeList}>
-            {active.length === 0 && <div className={styles.emptyMini}>No active alerts. All clear.</div>}
-            {active.map((a) => (
-              <AlertRow key={a.id} alert={a} canManage={canManage} onOpen={() => setDetail(a)}
-                onAck={() => act(acknowledgeAlert, a.id, 'acknowledged')}
-                onResolve={() => act(resolveAlert, a.id, 'resolved')}
-                onDismiss={() => act(dismissAlert, a.id, 'dismissed')} />
-            ))}
-          </div>
-        </section>
+        <Card
+          icon={Icons.bell}
+          title="Open alerts"
+          subtitle={active.length ? `${active.length} waiting · newest first` : undefined}
+          className={styles.activePanel}
+          bodyClassName={styles.activeBody}
+        >
+          {active.length === 0 ? (
+            <EmptyState icon={Icons.checkCircle} title="All clear" message="No open alerts. New ones show up here within a few seconds." />
+          ) : (
+            <ul className={styles.activeList}>
+              {active.map((a) => (
+                <AlertRow key={a.id} alert={a} canManage={canManage} onOpen={() => setDetail(a)}
+                  onAck={() => act(acknowledgeAlert, a.id, 'acknowledged')}
+                  onResolve={() => act(resolveAlert, a.id, 'resolved')}
+                  onDismiss={() => act(dismissAlert, a.id, 'dismissed')} />
+              ))}
+            </ul>
+          )}
+        </Card>
       </div>
 
-      {/* History */}
-      <section className={styles.historyPanel}>
-        <div className={styles.panelHead}>
-          <h2 className={styles.panelTitle}>Alert History</h2>
-          <div className={styles.filters}>
-            <input className={styles.searchInput} placeholder="Search…" onChange={onSearch} />
-            <select className={styles.filterSelect} value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
-              <option value="">All statuses</option><option value="NEW">New</option><option value="ACKNOWLEDGED">Acknowledged</option><option value="RESOLVED">Resolved</option><option value="DISMISSED">Dismissed</option>
-            </select>
-            <select className={styles.filterSelect} value={filters.severity} onChange={(e) => setFilters((f) => ({ ...f, severity: e.target.value }))}>
-              <option value="">All severities</option><option value="CRITICAL">Critical</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option>
-            </select>
-            <select className={styles.filterSelect} value={filters.alertType} onChange={(e) => setFilters((f) => ({ ...f, alertType: e.target.value }))}>
-              <option value="">All types</option><option value="MOTION">Motion</option><option value="WALL_INTRUSION">Wall Intrusion</option><option value="MAN_INSIDE_WAGON">Man Inside Wagon</option><option value="OVER_SPEED">Over Speed</option><option value="CANCELLED_VEHICLE">Cancelled Vehicle</option><option value="FACE_DETECTION">Unknown Person</option>
-            </select>
-          </div>
+      <Card
+        icon={Icons.history}
+        title="Alert history"
+        subtitle={`${history.total} ${history.total === 1 ? 'alert' : 'alerts'}`}
+        padded={false}
+      >
+        <div className={styles.filters}>
+          <SearchInput className={styles.search} value={searchText} onChange={onSearch} placeholder="Search camera, place or message" />
+          <select className={uiStyles.input} aria-label="Status" value={filters.status} onChange={setFilter('status')}>
+            <option value="">Any status</option><option value="NEW">New</option><option value="ACKNOWLEDGED">Seen</option><option value="RESOLVED">Resolved</option><option value="DISMISSED">Dismissed</option>
+          </select>
+          <select className={uiStyles.input} aria-label="Severity" value={filters.severity} onChange={setFilter('severity')}>
+            <option value="">Any severity</option><option value="CRITICAL">Critical</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option>
+          </select>
+          <select className={uiStyles.input} aria-label="Type" value={filters.alertType} onChange={setFilter('alertType')}>
+            <option value="">Any type</option>
+            {Object.entries(ALERT_TYPES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          {filterCount > 0 && (
+            <Button size="sm" variant="ghost" icon={Icons.close} onClick={() => { setFilters({ status: '', severity: '', alertType: '', search: '' }); setSearchText(''); }}>
+              Clear {filterCount} {filterCount === 1 ? 'filter' : 'filters'}
+            </Button>
+          )}
         </div>
 
         {history.items.length === 0 ? (
-          <div className={styles.emptyMini}>No alerts match these filters.</div>
+          <EmptyState icon={filterCount ? Icons.search : Icons.bell} title={filterCount ? 'No alerts match these filters' : 'No alerts yet'} message={filterCount ? 'Try removing a filter.' : 'Alerts raised by the cameras will be listed here.'} />
         ) : (
-          <div className={styles.historyTableWrap}>
-            <table className={styles.historyTable}>
-              <thead><tr><th>Evidence</th><th>Type</th><th>Camera</th><th>Location</th><th>Severity</th><th>Status</th><th>Detected</th><th></th></tr></thead>
-              <tbody>
-                {history.items.map((a) => (
-                  <tr key={a.id} onClick={() => setDetail(a)} className={styles.histRow}>
-                    <td><Thumb alert={a} /></td>
-                    <td><span className={styles.typeChip}>{a.alertType}</span></td>
-                    <td className={styles.camCell}>{a.camera?.cameraName || '—'}</td>
-                    <td>{a.location}</td>
-                    <td><StatusBadge status={a.severity} /></td>
-                    <td><StatusBadge status={a.status} /></td>
-                    <td className={styles.timeCell}>{fmt(a.detectedAt)}</td>
-                    <td><button className={styles.viewBtn} onClick={(e) => { e.stopPropagation(); setDetail(a); }}>View</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            caption="Alert history"
+            rows={history.items}
+            onRowClick={(a) => setDetail(a)}
+            rowTone={(a) => (a.severity === 'CRITICAL' && (a.status === 'NEW' || a.status === 'ACKNOWLEDGED') ? 'danger' : undefined)}
+            columns={[
+              { key: 'evidence', header: 'Photo', sortable: false, hideOnMobile: true, width: 76, render: (a) => <Thumb alert={a} /> },
+              {
+                key: 'alertType', header: 'What happened', primary: true, sortValue: (a) => typeLabel(a.alertType),
+                render: (a) => (
+                  <>
+                    <span className={uiStyles.strong}>{typeLabel(a.alertType)}</span>
+                    <span className={uiStyles.sub}>{a.camera?.cameraName || 'Camera'}{a.location ? ` · ${a.location}` : ''}</span>
+                  </>
+                ),
+              },
+              { key: 'severity', header: 'Severity', sortValue: (a) => ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].indexOf(a.severity), render: (a) => <StatusBadge status={a.severity} size="sm" /> },
+              { key: 'status', header: 'Status', render: (a) => <StatusBadge status={a.status} size="sm" /> },
+              { key: 'detectedAt', header: 'Spotted', sortValue: (a) => new Date(a.detectedAt).getTime(), render: (a) => <span className={uiStyles.muted}>{fmt(a.detectedAt)}</span> },
+            ]}
+          />
         )}
 
         <div className={styles.pagination}>
-          <span className={styles.pageInfo}>{history.total} alerts</span>
+          <span className={styles.pageInfo}>Page {history.page} of {history.totalPages}</span>
           <div className={styles.pageBtns}>
-            <button className={styles.pageBtn} disabled={history.page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button>
-            <span className={styles.pageNum}>Page {history.page} / {history.totalPages}</span>
-            <button className={styles.pageBtn} disabled={history.page >= history.totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
+            <Button size="sm" icon={Icons.chevronLeft} disabled={history.page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+            <Button size="sm" iconRight={Icons.chevronRight} disabled={history.page >= history.totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
           </div>
         </div>
-      </section>
+      </Card>
 
       {detail && (
         <AlertDetailModal alert={detail} canManage={canManage} onClose={() => setDetail(null)}
@@ -267,98 +295,102 @@ function SurveillanceAlerts() {
   );
 }
 
-function Stat({ label, value, tone }) {
-  return (
-    <div className={`${styles.statCard} ${styles[`tone_${tone}`]}`}>
-      <span className={styles.statValue}>{value}</span>
-      <span className={styles.statLabel}>{label}</span>
-    </div>
-  );
-}
-
-function Thumb({ alert }) {
+function Thumb({ alert, large = false }) {
   const [err, setErr] = useState(false);
   if (!alert.hasSnapshot || err) {
-    return <span className={styles.thumbPh}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5" /><circle cx="9" cy="9" r="1.6" /></svg></span>;
+    return <span className={`${styles.thumbPh} ${large ? styles.thumbLg : ''}`} aria-label="No photo">{Icons.camera}</span>;
   }
-  return <img className={styles.thumb} src={snapshotUrl(alert.id)} alt="Evidence" onError={() => setErr(true)} />;
+  return <img className={`${styles.thumb} ${large ? styles.thumbLg : ''}`} src={snapshotUrl(alert.id)} alt={`Photo: ${typeLabel(alert.alertType)}`} onError={() => setErr(true)} />;
 }
 
 function AlertRow({ alert, canManage, onOpen, onAck, onResolve, onDismiss }) {
   return (
-    <div className={styles.alertRow}>
-      <button className={styles.alertThumbBtn} onClick={onOpen}><Thumb alert={alert} /></button>
-      <div className={styles.alertInfo} onClick={onOpen}>
-        <div className={styles.alertTop}>
-          <StatusBadge status={alert.severity} />
-          <span className={styles.alertType}>{alert.alertType}</span>
-        </div>
-        <span className={styles.alertMsg} title={alert.message}>{alert.message}</span>
-        <span className={styles.alertMeta}>{alert.camera?.cameraName || alert.location} · {fmtTime(alert.detectedAt)}</span>
-      </div>
+    <li className={`${styles.alertRow} ${styles[`sev_${alert.severity}`] || ''}`}>
+      <button type="button" className={styles.alertMain} onClick={onOpen} aria-label={`Open alert: ${typeLabel(alert.alertType)}`}>
+        <Thumb alert={alert} />
+        <span className={styles.alertInfo}>
+          <span className={styles.alertTop}>
+            <span className={styles.alertType}>{typeLabel(alert.alertType)}</span>
+          </span>
+          <span className={styles.alertMsg} title={alert.message}>{alert.message}</span>
+          <span className={styles.alertMeta}>{alert.camera?.cameraName || alert.location} · {fmtTime(alert.detectedAt)}</span>
+          <span className={styles.alertChips}>
+            <StatusBadge status={alert.severity} size="sm" />
+            <StatusBadge status={alert.status} size="sm" />
+          </span>
+        </span>
+      </button>
       {canManage && (
         <div className={styles.alertActions}>
-          {alert.status === 'NEW' && <button className={styles.miniBtn} onClick={onAck} title="Acknowledge">Ack</button>}
-          <button className={`${styles.miniBtn} ${styles.miniOk}`} onClick={onResolve} title="Resolve">Resolve</button>
-          <button className={styles.miniGhost} onClick={onDismiss} title="Dismiss">✕</button>
+          {alert.status === 'NEW'
+            ? <Button size="sm" variant="secondary" icon={Icons.eye} onClick={onAck}>Mark seen</Button>
+            : <Button size="sm" variant="success" icon={Icons.check} onClick={onResolve}>Resolve</Button>}
+          <Menu
+            label="More alert actions"
+            items={[
+              { label: 'Resolve', icon: Icons.check, onClick: onResolve, hidden: alert.status !== 'NEW' },
+              { label: 'Dismiss (false alarm)', icon: Icons.ban, onClick: onDismiss },
+            ]}
+          />
         </div>
       )}
-    </div>
+    </li>
   );
 }
 
 function AlertDetailModal({ alert, canManage, onClose, onAck, onResolve, onDismiss, onCamera }) {
-  useEffect(() => {
-    const k = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k);
-  }, [onClose]);
   const details = alert.detectionDetails || {};
+  const detailItems = Object.entries(details).filter(([k]) => k !== 'regions')
+    .map(([k, v]) => ({ label: humanKey(k), value: typeof v === 'object' ? JSON.stringify(v) : String(v) }));
   return (
-    <div className={styles.modalOverlay} role="dialog" aria-modal="true" onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalHead}>
-          <div>
-            <h2 className={styles.modalTitle}>{alert.alertType} Alert</h2>
-            <span className={styles.modalSub}>{alert.camera?.cameraName || 'Camera'} · {alert.location}</span>
-          </div>
-          <button className={styles.modalClose} onClick={onClose} aria-label="Close"><svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg></button>
+    <Modal
+      isOpen
+      onClose={onClose}
+      size="lg"
+      icon={Icons.bell}
+      tone={alert.severity === 'CRITICAL' || alert.severity === 'HIGH' ? 'danger' : 'warning'}
+      title={typeLabel(alert.alertType)}
+      subtitle={`${alert.camera?.cameraName || 'Camera'}${alert.location ? ` · ${alert.location}` : ''} · ${fmt(alert.detectedAt)}`}
+      footer={(
+        <>
+          <Button variant="ghost" icon={Icons.camera} onClick={onCamera}>View camera</Button>
+          {canManage && (
+            <>
+              <Button onClick={onDismiss}>Dismiss as false alarm</Button>
+              {alert.status === 'NEW' && <Button onClick={onAck} icon={Icons.eye}>Mark seen</Button>}
+              <Button variant="primary" icon={Icons.check} onClick={onResolve}>Resolve</Button>
+            </>
+          )}
+        </>
+      )}
+    >
+      <div className={styles.modalGrid}>
+        <div className={styles.modalEvidence}>
+          {alert.hasSnapshot
+            ? <img src={snapshotUrl(alert.id)} alt={`Photo: ${typeLabel(alert.alertType)}`} className={styles.modalSnap} />
+            : <div className={styles.modalNoSnap}>{Icons.camera}<span>No photo was saved for this alert</span></div>}
         </div>
-        <div className={styles.modalBody}>
-          <div className={styles.modalEvidence}>
-            {alert.hasSnapshot
-              ? <img src={snapshotUrl(alert.id)} alt="Snapshot evidence" className={styles.modalSnap} />
-              : <div className={styles.modalNoSnap}>No snapshot evidence</div>}
-          </div>
-          <div className={styles.modalMeta}>
-            <div className={styles.modalRow}><span>Severity</span><StatusBadge status={alert.severity} /></div>
-            <div className={styles.modalRow}><span>Status</span><StatusBadge status={alert.status} /></div>
-            <div className={styles.modalRow}><span>Detector</span><strong>{alert.detectorType}</strong></div>
-            <div className={styles.modalRow}><span>Detected</span><strong>{fmt(alert.detectedAt)}</strong></div>
-            {alert.acknowledgedAt && <div className={styles.modalRow}><span>Acknowledged</span><strong>{fmt(alert.acknowledgedAt)}</strong></div>}
-            {alert.resolvedAt && <div className={styles.modalRow}><span>Resolved</span><strong>{fmt(alert.resolvedAt)}</strong></div>}
-            <p className={styles.modalMessage}>{alert.message}</p>
-            {Object.keys(details).length > 0 && (
-              <div className={styles.detailGrid}>
-                <span className={styles.detailHead}>Detection details</span>
-                {Object.entries(details).filter(([k]) => k !== 'regions').map(([k, v]) => (
-                  <div key={k} className={styles.detailKv}><span>{k}</span><strong>{String(v)}</strong></div>
-                ))}
-              </div>
-            )}
-            <div className={styles.modalActions}>
-              <button className={styles.secBtn} onClick={onCamera}>View Camera</button>
-              {canManage && (
-                <>
-                  {alert.status === 'NEW' && <button className={styles.secBtn} onClick={onAck}>Acknowledge</button>}
-                  <button className={styles.secBtn} onClick={onDismiss}>Dismiss</button>
-                  <button className={styles.primaryBtn} onClick={onResolve}>Resolve</button>
-                </>
-              )}
-            </div>
-          </div>
+        <div className={styles.modalMeta}>
+          <p className={styles.modalMessage}>{alert.message}</p>
+          <DetailList
+            items={[
+              { label: 'Severity', value: <StatusBadge status={alert.severity} size="sm" /> },
+              { label: 'Status', value: <StatusBadge status={alert.status} size="sm" /> },
+              { label: 'Spotted by', value: alert.detectorType ? humanKey(alert.detectorType) : '—', help: 'The detector (AI model) that raised this alert.' },
+              { label: 'Spotted at', value: fmt(alert.detectedAt) },
+              alert.acknowledgedAt && { label: 'Marked seen', value: fmt(alert.acknowledgedAt) },
+              alert.resolvedAt && { label: 'Resolved', value: fmt(alert.resolvedAt) },
+            ]}
+          />
+          {detailItems.length > 0 && (
+            <details className={styles.techDetails}>
+              <summary>Detection details</summary>
+              <DetailList items={detailItems} />
+            </details>
+          )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

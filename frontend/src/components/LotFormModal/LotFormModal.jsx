@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { createLot, updateLot } from '../../services/lotService';
-import styles from './LotFormModal.module.css';
+import { Modal, Field, Button, FormAlert } from '../ui';
+import { Icons } from '../ui/icons';
+import { uiStyles } from '../ui/styles';
 
 function LotFormModal({ isOpen, mode, materialId, initialData, onClose, onSaved }) {
   const [formData, setFormData] = useState({
@@ -8,7 +10,8 @@ function LotFormModal({ isOpen, mode, materialId, initialData, onClose, onSaved 
     quantity: '',
     unit: 'kg',
     receivedDate: new Date().toISOString().split('T')[0],
-    status: 'AVAILABLE'
+    status: 'AVAILABLE',
+    arrivalMode: ''
   });
   
   const [submitting, setSubmitting] = useState(false);
@@ -30,7 +33,8 @@ function LotFormModal({ isOpen, mode, materialId, initialData, onClose, onSaved 
           quantity: '',
           unit: 'kg',
           receivedDate: new Date().toISOString().split('T')[0],
-          status: 'AVAILABLE'
+          status: 'AVAILABLE',
+          arrivalMode: ''
         });
       }
       setError(null);
@@ -50,10 +54,13 @@ function LotFormModal({ isOpen, mode, materialId, initialData, onClose, onSaved 
     setError(null);
 
     try {
+      const { arrivalMode, ...rest } = formData;
       const payload = {
-        ...formData,
+        ...rest,
         materialId,
-        quantity: parseFloat(formData.quantity)
+        quantity: parseFloat(formData.quantity),
+        // Captured at receipt only; later changes go through Material Bay Allocation.
+        ...(mode !== 'edit' && arrivalMode ? { arrivalMode } : {})
       };
 
       if (mode === 'edit') {
@@ -74,105 +81,71 @@ function LotFormModal({ isOpen, mode, materialId, initialData, onClose, onSaved 
     }
   };
 
+  const field = (name) => ({ name, value: formData[name] ?? '', onChange: handleChange });
+
   return (
-    <div className={styles.overlay} role="dialog" aria-modal="true">
-      <div className={styles.modal}>
-        <div className={styles.header}>
-          <h2>{mode === 'edit' ? 'Edit Lot' : 'Create Lot'}</h2>
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-
-        {error && <div className={styles.errorText}>{error}</div>}
-
-        <form onSubmit={handleSubmit} className={styles.form}>
-          <div className={styles.formGroup}>
-            <label htmlFor="lotCode">Lot Code *</label>
-            <input
-              id="lotCode"
-              name="lotCode"
-              type="text"
-              required
-              value={formData.lotCode}
-              onChange={handleChange}
-              placeholder="e.g. LOT-2026-001"
-            />
-          </div>
-
-          <div className={styles.row}>
-            <div className={styles.formGroup}>
-              <label htmlFor="quantity">Quantity *</label>
-              <input
-                id="quantity"
-                name="quantity"
-                type="number"
-                step="0.01"
-                min="0.01"
-                required
-                value={formData.quantity}
-                onChange={handleChange}
-                placeholder="e.g. 100"
-              />
-            </div>
-            <div className={styles.formGroup}>
-              <label htmlFor="unit">Unit *</label>
-              <select
-                id="unit"
-                name="unit"
-                required
-                value={formData.unit}
-                onChange={handleChange}
-              >
+    <Modal
+      isOpen
+      onClose={onClose}
+      busy={submitting}
+      icon={Icons.box}
+      title={mode === 'edit' ? `Edit batch ${initialData?.lotCode || ''}` : 'Add a batch'}
+      subtitle="A batch (lot) is one delivery of a material."
+      as="form"
+      onSubmit={handleSubmit}
+      footer={(
+        <>
+          <Button onClick={onClose} disabled={submitting}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={submitting}>Save batch</Button>
+        </>
+      )}
+    >
+      <div className={uiStyles.formSection}>
+        <FormAlert>{error}</FormAlert>
+        <div className={uiStyles.formGrid}>
+          <Field label="Batch code" required className={uiStyles.span2} hint="Usually printed on the delivery note">
+            {(p) => <input {...p} {...field('lotCode')} type="text" required placeholder="e.g. LOT-2026-001" />}
+          </Field>
+          <Field label="Quantity" required>
+            {(p) => <input {...p} {...field('quantity')} type="number" step="0.01" min="0.01" required placeholder="e.g. 100" />}
+          </Field>
+          <Field label="Unit" required>
+            {(p) => (
+              <select {...p} {...field('unit')} required>
                 <option value="kg">kg</option>
                 <option value="tons">tons</option>
-                <option value="pcs">pcs</option>
-                <option value="liters">liters</option>
-                <option value="meters">meters</option>
+                <option value="pcs">pieces</option>
+                <option value="liters">litres</option>
+                <option value="meters">metres</option>
               </select>
-            </div>
-          </div>
-
-          <div className={styles.row}>
-            <div className={styles.formGroup}>
-              <label htmlFor="receivedDate">Received Date *</label>
-              <input
-                id="receivedDate"
-                name="receivedDate"
-                type="date"
-                required
-                value={formData.receivedDate}
-                onChange={handleChange}
-              />
-            </div>
-            <div className={styles.formGroup}>
-              <label htmlFor="status">Status</label>
-              <select
-                id="status"
-                name="status"
-                value={formData.status}
-                onChange={handleChange}
-              >
-                <option value="AVAILABLE">AVAILABLE</option>
-                <option value="MAPPED">MAPPED</option>
-                <option value="DISPATCHED">DISPATCHED</option>
+            )}
+          </Field>
+          <Field label="Date received" required>
+            {(p) => <input {...p} {...field('receivedDate')} type="date" required />}
+          </Field>
+          <Field label="Status" help="Free: not stored yet. Stored: in a storage spot. Sent out: left the yard.">
+            {(p) => (
+              <select {...p} {...field('status')}>
+                <option value="AVAILABLE">Free (not stored yet)</option>
+                <option value="MAPPED">Stored</option>
+                <option value="DISPATCHED">Sent out</option>
               </select>
-            </div>
-          </div>
-
-          <div className={styles.footer}>
-            <button type="button" className={styles.cancelBtn} onClick={onClose} disabled={submitting}>
-              Cancel
-            </button>
-            <button type="submit" className={styles.submitBtn} disabled={submitting}>
-              {submitting ? 'Saving...' : 'Save Lot'}
-            </button>
-          </div>
-        </form>
+            )}
+          </Field>
+          {mode !== 'edit' && (
+            <Field label="How did it arrive?" optional className={uiStyles.span2} hint="You can record this later if you’re not sure.">
+              {(p) => (
+                <select {...p} {...field('arrivalMode')}>
+                  <option value="">Not recorded yet</option>
+                  <option value="RAIL">Rail</option>
+                  <option value="ROAD">Road</option>
+                </select>
+              )}
+            </Field>
+          )}
+        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

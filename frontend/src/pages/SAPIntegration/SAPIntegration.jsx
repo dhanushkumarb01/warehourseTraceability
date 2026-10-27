@@ -1,8 +1,8 @@
 /**
- * SAPIntegration Page — SAP integration dashboard.
+ * SAPIntegration Page ("SAP connection") — SAP integration dashboard.
  *
- * Connection status, sync & validation statistics, recent SAP events, and
- * retry actions for failed syncs. Read access: ADMIN + MANAGER; retry: ADMIN.
+ * Connection status, sync & validation KPIs, recent SAP events, and retry
+ * actions for failed syncs. Read access: ADMIN + MANAGER; retry: ADMIN.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -10,12 +10,27 @@ import { useAuth } from '../../context/AuthContext';
 import { GROUPS } from '../../config/roles';
 import { fetchDashboard, retrySync } from '../../services/sapService';
 import Toast from '../../components/Toast/Toast';
+import {
+  PageHeader, StatCard, Card, Button, IconButton, DataTable, LoadingRows, ErrorState, EmptyState, StatusChip, Skeleton,
+} from '../../components/ui';
+import { Icons } from '../../components/ui/icons';
+import { uiStyles } from '../../components/ui/styles';
 import styles from './SAPIntegration.module.css';
 
 const fmt = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
+const words = (v) => (v ? v.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase()) : '—');
 
-const SYNC_BADGE = { SUCCESS: 'sOk', FAILED: 'sFail', PENDING: 'sPend', IN_PROGRESS: 'sProg' };
-const VAL_BADGE = { VALIDATED: 'sOk', WARNING: 'sWarn', BLOCKED: 'sFail' };
+const SYNC = {
+  SUCCESS: { tone: 'success', label: 'Sent', icon: Icons.checkCircle },
+  FAILED: { tone: 'danger', label: 'Failed', icon: Icons.xCircle },
+  PENDING: { tone: 'warning', label: 'Waiting', icon: Icons.hourglass },
+  IN_PROGRESS: { tone: 'info', label: 'Sending', icon: Icons.sync },
+};
+const VALIDATION = {
+  VALIDATED: { tone: 'success', label: 'Passed', icon: Icons.checkCircle },
+  WARNING: { tone: 'warning', label: 'Passed with warning', icon: Icons.warning },
+  BLOCKED: { tone: 'danger', label: 'Blocked', icon: Icons.ban },
+};
 
 function SAPIntegration() {
   const { can } = useAuth();
@@ -29,7 +44,7 @@ function SAPIntegration() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try { setData(await fetchDashboard()); }
-    catch (err) { setError(err.message || 'Failed to load SAP dashboard.'); }
+    catch (err) { setError(err); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -38,7 +53,10 @@ function SAPIntegration() {
     setRetrying(id);
     try {
       const res = await retrySync(id);
-      setToast({ message: `Retry ${res.status.toLowerCase()}.`, type: res.status === 'SUCCESS' ? 'success' : 'error' });
+      setToast({
+        message: res.status === 'SUCCESS' ? 'Sent to SAP successfully.' : `Retry finished: ${res.status.toLowerCase().replace(/_/g, ' ')}.`,
+        type: res.status === 'SUCCESS' ? 'success' : 'error',
+      });
       load();
     } catch (err) {
       setToast({ message: err.message || 'Retry failed.', type: 'error' });
@@ -50,112 +68,107 @@ function SAPIntegration() {
   const conn = data?.connection;
   const sync = data?.sync || {};
   const validation = data?.validation || {};
+  const pending = (sync.PENDING || 0) + (sync.IN_PROGRESS || 0);
 
   return (
     <div className={styles.page}>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: '' })} />
 
-      <div className={styles.pageHeader}>
-        <div className={styles.pageHeaderLeft}>
-          <div className={styles.pageIcon}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2 1.5 3 4 3h8c2.5 0 4-1 4-3V7M4 7c0-2 1.5-3 4-3h8c2.5 0 4 1 4 3M4 7c0 2 1.5 3 4 3h8c2.5 0 4-1 4-3M9 13h6" /></svg>
-          </div>
-          <div>
-            <h1 className={styles.pageTitle}>SAP Integration</h1>
-            <p className={styles.pageBreadcrumb}>ERP synchronization, validation &amp; connection health</p>
-          </div>
-        </div>
-        <button className={styles.refreshBtn} onClick={load} disabled={loading}>Refresh</button>
-      </div>
+      <PageHeader
+        icon={Icons.database}
+        title="SAP connection"
+        term="SAP integration"
+        subtitle="Whether our records are reaching SAP, and the checks SAP runs on outgoing trucks."
+        actions={<IconButton icon={Icons.refresh} label="Refresh" variant="outline" onClick={load} disabled={loading} />}
+      />
 
       {/* Connection status */}
-      <div className={`${styles.connBanner} ${conn?.connected ? styles.connOk : styles.connDown}`}>
-        <span className={styles.connDot} />
-        <div>
-          <span className={styles.connTitle}>
-            {loading ? 'Checking connection…' : conn?.connected ? 'SAP Connected' : 'SAP Unreachable'}
-          </span>
-          <span className={styles.connSub}>
-            Mode: <strong>{conn?.mode || '—'}</strong>
-            {conn?.info?.system ? ` · ${conn.info.system}` : ''}
-            {data?.lastSyncTime ? ` · Last sync ${fmt(data.lastSyncTime)}` : ''}
-          </span>
+      {loading && !data ? <Skeleton height={74} radius={20} className={styles.connSkel} /> : (
+        <div className={`${styles.connBanner} ${conn?.connected ? styles.connOk : styles.connDown}`} role="status">
+          <span className={styles.connIcon}>{conn?.connected ? Icons.checkCircle : Icons.wifiOff}</span>
+          <div className={styles.connText}>
+            <span className={styles.connTitle}>{conn?.connected ? 'SAP is connected' : 'SAP can’t be reached'}</span>
+            <span className={styles.connSub}>
+              {conn?.connected
+                ? 'Records are being sent and checked normally.'
+                : 'New records wait in a queue and are sent once SAP is back. Nothing is lost.'}
+              {' '}Mode: <strong>{conn?.mode || '—'}</strong>
+              {conn?.info?.system ? ` · ${conn.info.system}` : ''}
+              {data?.lastSyncTime ? ` · last sent ${fmt(data.lastSyncTime)}` : ''}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Stats */}
-      <div className={styles.statsStrip}>
-        <StatCard label="Successful Syncs" value={loading ? '—' : sync.SUCCESS || 0} color="#16a34a" />
-        <StatCard label="Failed Syncs" value={loading ? '—' : sync.FAILED || 0} color="#dc2626" />
-        <StatCard label="Pending Syncs" value={loading ? '—' : (sync.PENDING || 0) + (sync.IN_PROGRESS || 0)} color="#ca8a04" />
-        <StatCard label="SAP Validated" value={loading ? '—' : validation.VALIDATED || 0} color="#2563eb" />
-        <StatCard label="SAP Blocked" value={loading ? '—' : validation.BLOCKED || 0} color="#7c3aed" />
-      </div>
+      {error && !data && <Card><ErrorState title="We couldn’t load the SAP dashboard" error={error} onRetry={load} /></Card>}
 
-      {error && <div className={styles.errorBanner}>{error}</div>}
+      <section className={styles.kpis} aria-label="SAP summary">
+        <StatCard icon={Icons.checkCircle} label="Sent to SAP" value={loading && !data ? null : sync.SUCCESS || 0} loading={loading && !data} tone="success" hint="Records accepted by SAP" />
+        <StatCard icon={Icons.xCircle} label="Failed to send" value={loading && !data ? null : sync.FAILED || 0} loading={loading && !data}
+          tone={sync.FAILED > 0 ? 'danger' : 'success'} status={sync.FAILED > 0 ? 'Retry needed' : 'None'} hint={canRetry ? 'You can retry these below' : 'An administrator can retry these'} />
+        <StatCard icon={Icons.hourglass} label="Waiting to send" value={loading && !data ? null : pending} loading={loading && !data} tone={pending > 0 ? 'warning' : 'neutral'} hint="In the queue" />
+        <StatCard icon={Icons.shieldCheck} label="Checks passed" value={loading && !data ? null : validation.VALIDATED || 0} loading={loading && !data} tone="info" hint="SAP approved the truck or batch" />
+        <StatCard icon={Icons.ban} label="Checks blocked" value={loading && !data ? null : validation.BLOCKED || 0} loading={loading && !data}
+          tone={validation.BLOCKED > 0 ? 'danger' : 'neutral'} hint="SAP said no — see the reason" />
+      </section>
 
-      {/* Recent syncs */}
-      <div className={styles.card}>
-        <div className={styles.cardHeader}><h3 className={styles.cardTitle}>Recent Sync Events</h3></div>
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead><tr><th>Type</th><th>Entity</th><th>Status</th><th>Attempts</th><th>Updated</th><th>Detail</th><th></th></tr></thead>
-            <tbody>
-              {(data?.recentSyncs || []).length === 0 ? (
-                <tr><td colSpan={7} className={styles.empty}>No sync events yet.</td></tr>
-              ) : data.recentSyncs.map((s) => (
-                <tr key={s.id}>
-                  <td><span className={styles.typeChip}>{s.entityType}</span></td>
-                  <td className={styles.mono}>{s.entityId.slice(0, 8)}…</td>
-                  <td><span className={`${styles.badge} ${styles[SYNC_BADGE[s.status] || 'sPend']}`}>{s.status}</span></td>
-                  <td>{s.attemptCount}</td>
-                  <td className={styles.muted}>{fmt(s.updatedAt)}</td>
-                  <td className={styles.detail} title={s.errorMessage || ''}>{s.errorMessage || '—'}</td>
-                  <td>
-                    {s.status === 'FAILED' && canRetry && (
-                      <button className={styles.retryBtn} onClick={() => handleRetry(s.id)} disabled={retrying === s.id}>
-                        {retrying === s.id ? '…' : 'Retry'}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <Card icon={Icons.sync} title="Recent records sent to SAP" subtitle="Newest first" padded={false} className={styles.block}>
+        {loading && !data ? <LoadingRows rows={4} /> : (data?.recentSyncs || []).length === 0 ? (
+          <EmptyState icon={Icons.sync} title="Nothing sent yet" message="Records appear here as they’re sent to SAP." />
+        ) : (
+          <DataTable
+            caption="Recent SAP sync events"
+            rows={data.recentSyncs}
+            defaultSort={{ key: 'updatedAt', dir: 'desc' }}
+            rowTone={(r) => (r.status === 'FAILED' ? 'danger' : undefined)}
+            columns={[
+              {
+                key: 'entityType', header: 'Record', primary: true,
+                render: (r) => (
+                  <>
+                    <span className={uiStyles.strong}>{words(r.entityType)}</span>
+                    <span className={uiStyles.sub}>ID <span className={uiStyles.mono}>{r.entityId.slice(0, 8)}…</span></span>
+                  </>
+                ),
+              },
+              { key: 'status', header: 'Result', render: (r) => { const m = SYNC[r.status] || { tone: 'neutral', label: words(r.status) }; return <StatusChip tone={m.tone} icon={m.icon} size="sm">{m.label}</StatusChip>; } },
+              { key: 'attemptCount', header: 'Tries', align: 'right', render: (r) => <span className="wt-num">{r.attemptCount}</span> },
+              { key: 'updatedAt', header: 'Updated', sortValue: (r) => new Date(r.updatedAt).getTime(), render: (r) => <span className={uiStyles.muted}>{fmt(r.updatedAt)}</span> },
+              { key: 'errorMessage', header: 'Reason', sortable: false, render: (r) => <span className={styles.detail} title={r.errorMessage || ''}>{r.errorMessage || '—'}</span> },
+            ]}
+            actions={canRetry ? (r) => (r.status === 'FAILED'
+              ? <Button size="sm" variant="secondary" icon={Icons.refresh} loading={retrying === r.id} onClick={() => handleRetry(r.id)}>Retry</Button>
+              : null) : undefined}
+          />
+        )}
+      </Card>
 
-      {/* Recent validations */}
-      <div className={styles.card}>
-        <div className={styles.cardHeader}><h3 className={styles.cardTitle}>Recent SAP Validations</h3></div>
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead><tr><th>Type</th><th>Entity</th><th>Result</th><th>Message</th><th>When</th></tr></thead>
-            <tbody>
-              {(data?.recentValidations || []).length === 0 ? (
-                <tr><td colSpan={5} className={styles.empty}>No validations yet.</td></tr>
-              ) : data.recentValidations.map((v) => (
-                <tr key={v.id}>
-                  <td><span className={styles.typeChip}>{v.validationType}</span></td>
-                  <td className={styles.mono}>{v.entityId.slice(0, 8)}…</td>
-                  <td><span className={`${styles.badge} ${styles[VAL_BADGE[v.status] || 'sPend']}`}>{v.status}</span></td>
-                  <td className={styles.detail} title={v.message || ''}>{v.message || '—'}</td>
-                  <td className={styles.muted}>{fmt(v.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value, color }) {
-  return (
-    <div className={styles.statCard} style={{ '--stat-color': color }}>
-      <span className={styles.statValue}>{value}</span>
-      <span className={styles.statLabel}>{label}</span>
+      <Card icon={Icons.shieldCheck} title="Recent SAP checks" subtitle="What SAP said about outgoing trucks and batches" padded={false}>
+        {loading && !data ? <LoadingRows rows={4} /> : (data?.recentValidations || []).length === 0 ? (
+          <EmptyState icon={Icons.shieldCheck} title="No checks yet" message="Checks appear when an outgoing truck or gate scan is verified with SAP." />
+        ) : (
+          <DataTable
+            caption="Recent SAP validations"
+            rows={data.recentValidations}
+            defaultSort={{ key: 'createdAt', dir: 'desc' }}
+            rowTone={(r) => (r.status === 'BLOCKED' ? 'danger' : undefined)}
+            columns={[
+              {
+                key: 'validationType', header: 'Check', primary: true,
+                render: (v) => (
+                  <>
+                    <span className={uiStyles.strong}>{words(v.validationType)}</span>
+                    <span className={uiStyles.sub}>ID <span className={uiStyles.mono}>{v.entityId.slice(0, 8)}…</span></span>
+                  </>
+                ),
+              },
+              { key: 'status', header: 'Result', render: (v) => { const m = VALIDATION[v.status] || { tone: 'neutral', label: words(v.status) }; return <StatusChip tone={m.tone} icon={m.icon} size="sm">{m.label}</StatusChip>; } },
+              { key: 'message', header: 'What SAP said', sortable: false, render: (v) => <span className={styles.detail} title={v.message || ''}>{v.message || '—'}</span> },
+              { key: 'createdAt', header: 'When', sortValue: (v) => new Date(v.createdAt).getTime(), render: (v) => <span className={uiStyles.muted}>{fmt(v.createdAt)}</span> },
+            ]}
+          />
+        )}
+      </Card>
     </div>
   );
 }

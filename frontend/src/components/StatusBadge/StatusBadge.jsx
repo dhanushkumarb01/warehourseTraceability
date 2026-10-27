@@ -1,55 +1,18 @@
 /**
  * StatusBadge Component
  *
- * Visual badge for BayStatus enum values.
+ * Status chip for any backend status enum (bay, lot, dispatch, gate, camera,
+ * alert). Renders icon + plain-language label from the shared vocabulary in
+ * ui/status.js, so status never relies on colour alone.
  * Props:
- *   status {string} — 'AVAILABLE' | 'OCCUPIED' | 'INACTIVE'
+ *   status {string} — e.g. 'AVAILABLE' | 'OCCUPIED' | 'PENDING' | 'CRITICAL'
+ *   size   {'sm'}   — optional compact size
  */
 
-import styles from './StatusBadge.module.css';
+import { StatusChip } from '../ui';
 
-const STATUS_MAP = {
-  AVAILABLE:  { label: 'Available',  className: 'available' },
-  OCCUPIED:   { label: 'Occupied',   className: 'occupied'  },
-  INACTIVE:   { label: 'Inactive',   className: 'inactive'  },
-  ACTIVE:     { label: 'Active',     className: 'active'    },
-  MAPPED:     { label: 'Mapped',     className: 'mapped'    },
-  DISPATCHED: { label: 'Dispatched', className: 'dispatched'},
-  // Dispatch lifecycle
-  PENDING:    { label: 'Pending',    className: 'pending'   },
-  APPROVED:   { label: 'Approved',   className: 'approved'  },
-  REJECTED:   { label: 'Rejected',   className: 'rejected'  },
-  COMPLETED:  { label: 'Completed',  className: 'completed' },
-  CANCELLED:  { label: 'Cancelled',  className: 'cancelled' },
-  // Gate validation lifecycle
-  VALIDATED:  { label: 'Validated',  className: 'validated' },
-  DENIED:     { label: 'Denied',     className: 'denied'    },
-  EXITED:     { label: 'Exited',     className: 'exited'    },
-  // Surveillance — camera status + health
-  MAINTENANCE:{ label: 'Maintenance',className: 'maintenance' },
-  ONLINE:     { label: 'Online',     className: 'online'    },
-  OFFLINE:    { label: 'Offline',    className: 'offline'   },
-  UNKNOWN:    { label: 'Unknown',    className: 'unknown'   },
-  // Surveillance — alert lifecycle
-  NEW:          { label: 'New',          className: 'alertNew'     },
-  ACKNOWLEDGED: { label: 'Acknowledged', className: 'acknowledged' },
-  RESOLVED:     { label: 'Resolved',     className: 'resolved'     },
-  DISMISSED:    { label: 'Dismissed',    className: 'dismissed'    },
-  // Surveillance — alert severity
-  LOW:        { label: 'Low',        className: 'sevLow'    },
-  MEDIUM:     { label: 'Medium',     className: 'sevMedium' },
-  HIGH:       { label: 'High',       className: 'sevHigh'   },
-  CRITICAL:   { label: 'Critical',   className: 'sevCritical' },
-};
-
-function StatusBadge({ status }) {
-  const config = STATUS_MAP[status] || { label: status, className: 'inactive' };
-  return (
-    <span className={`${styles.badge} ${styles[config.className]}`}>
-      <span className={styles.dot} />
-      {config.label}
-    </span>
-  );
+function StatusBadge({ status, size }) {
+  return <StatusChip status={status} size={size} />;
 }
 
 export default StatusBadge;

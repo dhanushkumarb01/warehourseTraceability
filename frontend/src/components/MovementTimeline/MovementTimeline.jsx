@@ -1,19 +1,18 @@
 /**
  * MovementTimeline Component
  *
- * Presentational, reusable timeline of a lot's mapping history. Receives the
+ * Presentational, reusable timeline of a batch's storage history. Receives the
  * array of mappings returned by GET /mappings/lot/:lotId/history (chronological,
- * includes closed MOVED / UNMAPPED rows) and renders an audit-friendly trail.
- *
- * Stateless and data-source agnostic — used by both the Material Mapping page
- * (history modal) and the Lot detail modal.
+ * includes closed MOVED / UNMAPPED rows) and renders it with the shared
+ * Timeline primitive (newest first).
  *
  * Props:
  *   history {Array}   mapping rows (each with bay, mappedAt, unmappedAt, status)
- *   compact {boolean} tighter spacing for embedding in a detail panel
+ *   compact {boolean} kept for call-site compatibility
  */
 
-import styles from './MovementTimeline.module.css';
+import { Timeline, EmptyState } from '../ui';
+import { Icons } from '../ui/icons';
 
 const fmt = (d) =>
   d
@@ -23,14 +22,15 @@ const fmt = (d) =>
     : null;
 
 const STATUS_META = {
-  ACTIVE:   { dot: styles.dotActive,   label: 'Currently here' },
-  MOVED:    { dot: styles.dotMoved,    label: 'Moved out' },
-  UNMAPPED: { dot: styles.dotUnmapped, label: 'Removed' },
+  ACTIVE:   { state: 'current', label: 'Here now' },
+  MOVED:    { state: 'done', label: 'Moved out' },
+  UNMAPPED: { state: 'done', label: 'Taken out' },
 };
 
+// eslint-disable-next-line no-unused-vars
 function MovementTimeline({ history = [], compact = false }) {
   if (!history || history.length === 0) {
-    return <p className={styles.empty}>No movement history yet.</p>;
+    return <EmptyState icon={Icons.history} title="No movements yet" message="Each time this batch is stored or moved, it shows up here." />;
   }
 
   // Newest first for display.
@@ -39,37 +39,19 @@ function MovementTimeline({ history = [], compact = false }) {
   );
 
   return (
-    <ul className={`${styles.timeline} ${compact ? styles.compact : ''}`}>
-      {ordered.map((m) => {
+    <Timeline
+      items={ordered.map((m) => {
         const meta = STATUS_META[m.status] || STATUS_META.MOVED;
-        return (
-          <li key={m.id} className={styles.item}>
-            <span className={`${styles.dot} ${meta.dot}`} />
-            <div className={styles.content}>
-              <div className={styles.row}>
-                <span className={styles.bayCode}>{m.bay?.bayCode || '—'}</span>
-                <span className={styles.bayName}>{m.bay?.bayName}</span>
-                <span className={`${styles.statusTag} ${meta.dot}`}>{meta.label}</span>
-              </div>
-              <div className={styles.meta}>
-                <span>Zone {m.bay?.zone || '—'}</span>
-                <span className={styles.sep}>·</span>
-                <span>In: {fmt(m.mappedAt)}</span>
-                {m.unmappedAt && (
-                  <>
-                    <span className={styles.sep}>·</span>
-                    <span>Out: {fmt(m.unmappedAt)}</span>
-                  </>
-                )}
-              </div>
-              {m.user?.username && (
-                <div className={styles.byline}>by {m.user.username}</div>
-              )}
-            </div>
-          </li>
-        );
+        return {
+          key: m.id,
+          state: meta.state,
+          icon: meta.state === 'current' ? Icons.pin : undefined,
+          title: `${m.bay?.bayCode || '—'}${m.bay?.bayName && m.bay.bayName !== m.bay.bayCode ? ` · ${m.bay.bayName}` : ''} — ${meta.label}`,
+          time: `In: ${fmt(m.mappedAt)}${m.unmappedAt ? ` · Out: ${fmt(m.unmappedAt)}` : ''}`,
+          meta: [m.bay?.zone, m.user?.username && `by ${m.user.username}`].filter(Boolean).join(' · ') || undefined,
+        };
       })}
-    </ul>
+    />
   );
 }
 

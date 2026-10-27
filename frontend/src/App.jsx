@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute';
 import { GROUPS } from './config/roles';
@@ -20,11 +20,8 @@ import { GROUPS } from './config/roles';
 import Sidebar            from './components/Sidebar/Sidebar';
 import TopHeader          from './components/TopHeader/TopHeader';
 import Login              from './pages/Login/Login';
-import BayManagement      from './pages/BayManagement/BayManagement';
 import DigitalYardMap     from './pages/DigitalYardMap/DigitalYardMap';
-import MaterialManagement from './pages/MaterialManagement/MaterialManagement';
-import MaterialDetail     from './pages/MaterialDetail/MaterialDetail';
-import MaterialMapping    from './pages/MaterialMapping/MaterialMapping';
+import InboundStorage     from './pages/InboundStorage/InboundStorage';
 import Dispatch           from './pages/Dispatch/Dispatch';
 import GateValidation     from './pages/GateValidation/GateValidation';
 import UserManagement     from './pages/UserManagement/UserManagement';
@@ -39,6 +36,12 @@ import LiveMonitoring     from './pages/LiveMonitoring/LiveMonitoring';
 import SurveillanceAlerts from './pages/SurveillanceAlerts/SurveillanceAlerts';
 import FaceRegistry       from './pages/FaceRegistry/FaceRegistry';
 import styles             from './App.module.css';
+
+/** Former /materials/:id — opens that material's lots in the Catalogue tab. */
+function MaterialRedirect() {
+  const { id } = useParams();
+  return <Navigate to={`/inbound?tab=catalogue&material=${encodeURIComponent(id)}`} replace />;
+}
 
 /** Authenticated application shell: sidebar + top header + routed main content. */
 function AppShell() {
@@ -69,10 +72,13 @@ function AppShell() {
 
           {/* Yard / inventory */}
           <Route path="/yard-map" element={<DigitalYardMap />} />
-          <Route path="/bays" element={<BayManagement />} />
-          <Route path="/materials" element={<MaterialManagement />} />
-          <Route path="/materials/:id" element={<MaterialDetail />} />
-          <Route path="/mappings" element={<MaterialMapping />} />
+          <Route path="/inbound" element={<InboundStorage />} />
+          {/* Former pages merged into Inbound & Storage — kept so bookmarks keep working. */}
+          <Route path="/bays" element={<Navigate to="/inbound?tab=layout" replace />} />
+          <Route path="/materials" element={<Navigate to="/inbound?tab=catalogue" replace />} />
+          <Route path="/materials/:id" element={<MaterialRedirect />} />
+          <Route path="/allocation" element={<Navigate to="/inbound" replace />} />
+          <Route path="/mappings" element={<Navigate to="/inbound" replace />} />
 
           {/* Dispatch + gate */}
           <Route path="/dispatch" element={<Dispatch />} />

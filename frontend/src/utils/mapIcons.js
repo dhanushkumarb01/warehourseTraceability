@@ -23,11 +23,18 @@ import { statusToColour } from '../utils/mapUtils';
  * @param {boolean} [isSelected=false] — renders with a highlight ring when true
  * @returns {L.DivIcon}
  */
+// Small status glyphs so the marker never relies on colour alone.
+const GLYPH = {
+  AVAILABLE: '<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="3"/>',
+  OCCUPIED: '<circle cx="12" cy="12" r="8" fill="currentColor"/>',
+  INACTIVE: '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="3"/><path d="M6.5 6.5l11 11" stroke="currentColor" stroke-width="3"/>',
+};
+
 export const createBayIcon = (bay, isSelected = false) => {
-  const colour    = statusToColour(bay.status);
-  const ringStyle = isSelected
-    ? `box-shadow: 0 0 0 3px ${colour}40, 0 4px 16px ${colour}60; transform: scale(1.05); z-index: 1000;`
-    : `box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);`;
+  const colour = statusToColour(bay.status);
+  const ring = isSelected
+    ? `box-shadow: 0 0 0 3px var(--c-bg), 0 0 0 5px ${colour}, 0 8px 22px rgba(0,0,0,0.45); transform: scale(1.08);`
+    : 'box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);';
 
   // Display a shorter code inside the block if it has a prefix (e.g. BAY-001 -> 001)
   const shortCode = bay.bayCode.includes('-')
@@ -36,36 +43,18 @@ export const createBayIcon = (bay, isSelected = false) => {
 
   const html = `
     <div style="
-      width: 44px;
-      height: 32px;
-      background: #ffffff;
-      border: 2px solid ${colour};
-      border-radius: 4px;
-      ${ringStyle}
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      position: relative;
-      overflow: hidden;
-      transition: all 0.2s ease;
+      width: 52px; height: 30px; box-sizing: border-box;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+      background: var(--c-overlay); color: var(--c-heading);
+      border: 1.5px solid ${colour}; border-radius: 9px;
+      ${ring}
+      ${bay.status === 'INACTIVE' ? 'border-style: dashed; opacity: 0.85;' : ''}
+      cursor: pointer; transition: transform 0.15s ease;
     ">
-      <div style="
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 6px;
-        background: ${colour};
-      "></div>
+      <svg viewBox="0 0 24 24" width="11" height="11" style="color: ${colour}; flex-shrink: 0;">${GLYPH[bay.status] || GLYPH.AVAILABLE}</svg>
       <span style="
-        font-family: ui-monospace, Consolas, monospace;
-        font-size: 0.65rem;
-        font-weight: 700;
-        color: #374151;
-        margin-top: 4px;
-        letter-spacing: -0.2px;
+        font-family: Inter, system-ui, sans-serif; font-size: 12px; font-weight: 700;
+        font-variant-numeric: tabular-nums; letter-spacing: -0.2px;
       ">${shortCode}</span>
     </div>
   `;
@@ -73,8 +62,8 @@ export const createBayIcon = (bay, isSelected = false) => {
   return L.divIcon({
     html,
     className:  '',          // suppress Leaflet's default white square background
-    iconSize:   [44, 32],
-    iconAnchor: [22, 16],    // center of the block
+    iconSize:   [52, 30],
+    iconAnchor: [26, 15],    // center of the block
     popupAnchor:[0, -18],
   });
 };

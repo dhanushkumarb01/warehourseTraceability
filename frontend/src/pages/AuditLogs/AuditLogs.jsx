@@ -1,17 +1,35 @@
 /**
- * AuditLogs Page (ADMIN / MANAGER)
+ * AuditLogs Page ("Activity log", ADMIN / MANAGER)
  *
- * Read-only view of the audit trail with a module filter. Each row shows who
- * did what, when, and the captured metadata — the backbone of traceability and
- * audit compliance.
+ * Read-only view of the audit trail with an area filter and search. Each row
+ * shows who did what, when, and the captured details — the backbone of
+ * traceability and audit compliance.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchAuditLogs } from '../../services/authApi';
+import { ROLE_LABELS } from '../../config/navigation';
+import {
+  PageHeader, Card, Tabs, Button, IconButton, SearchInput, DataTable, LoadingRows, ErrorState, EmptyState, Tag,
+} from '../../components/ui';
+import { Icons } from '../../components/ui/icons';
+import { uiStyles } from '../../components/ui/styles';
 import styles from './AuditLogs.module.css';
 
-const MODULES = ['ALL', 'AUTH', 'USER', 'MATERIAL', 'MATERIAL_LOT', 'QR', 'MAPPING', 'DISPATCH', 'GATE_VALIDATION'];
+const MODULES = [
+  { value: 'ALL', label: 'Everything' },
+  { value: 'AUTH', label: 'Sign-ins' },
+  { value: 'USER', label: 'Users' },
+  { value: 'MATERIAL', label: 'Materials' },
+  { value: 'MATERIAL_LOT', label: 'Batches' },
+  { value: 'QR', label: 'QR labels' },
+  { value: 'MAPPING', label: 'Storage' },
+  { value: 'DISPATCH', label: 'Outgoing trucks' },
+  { value: 'GATE_VALIDATION', label: 'Exit gate' },
+];
+const MODULE_LABEL = Object.fromEntries(MODULES.map((m) => [m.value, m.label]));
 const fmt = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—');
+const words = (v) => (v ? v.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase()) : '—');
 
 const prettyMeta = (remarks) => {
   if (!remarks) return '—';
@@ -32,6 +50,7 @@ function AuditLogs() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [moduleFilter, setModuleFilter] = useState('ALL');
+  const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -39,65 +58,78 @@ function AuditLogs() {
       const params = moduleFilter === 'ALL' ? { limit: 300 } : { module: moduleFilter, limit: 300 };
       setLogs(await fetchAuditLogs(params));
     } catch (err) {
-      setError(err.message || 'Failed to load audit logs.');
+      setError(err);
     } finally {
       setLoading(false);
     }
   }, [moduleFilter]);
   useEffect(() => { load(); }, [load]);
 
-  const count = useMemo(() => logs.length, [logs]);
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return logs;
+    return logs.filter((l) => [l.user?.username, l.module, l.action, l.remarks].some((v) => v && String(v).toLowerCase().includes(q)));
+  }, [logs, search]);
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <div className={styles.pageHeaderLeft}>
-          <div className={styles.pageIcon}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-          </div>
-          <div>
-            <h1 className={styles.pageTitle}>Audit Logs</h1>
-            <p className={styles.pageBreadcrumb}>Complete, attributable activity trail</p>
-          </div>
-        </div>
-        <button className={styles.refreshBtn} onClick={load} disabled={loading}>Refresh</button>
-      </div>
+      <PageHeader
+        icon={Icons.document}
+        title="Activity log"
+        term="Audit logs"
+        subtitle="Who did what, and when. Every change in the system is recorded here and can’t be edited."
+        actions={<IconButton icon={Icons.refresh} label="Refresh" variant="outline" onClick={load} disabled={loading} />}
+      />
 
-      <div className={styles.tabs}>
-        {MODULES.map((m) => (
-          <button key={m} className={`${styles.tab} ${moduleFilter === m ? styles.tabActive : ''}`} onClick={() => setModuleFilter(m)}>
-            {m === 'ALL' ? 'All' : m.replace('_', ' ')}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={MODULES} value={moduleFilter} onChange={setModuleFilter} ariaLabel="Filter by area" />
 
-      <div className={styles.card}>
-        <div className={styles.cardHeader}><span className={styles.count}>{count} entries</span></div>
-        {loading ? (
-          <div className={styles.loadingState}><div className={styles.skeleton} /><div className={styles.skeleton} /><div className={styles.skeleton} /></div>
-        ) : error ? (
-          <div className={styles.emptyRow}>{error}</div>
-        ) : logs.length === 0 ? (
-          <div className={styles.emptyRow}>No audit entries{moduleFilter !== 'ALL' ? ` for ${moduleFilter}` : ''}.</div>
+      <Card
+        icon={Icons.history}
+        title={MODULE_LABEL[moduleFilter]}
+        subtitle={loading ? 'Loading…' : `${rows.length} of ${logs.length} ${logs.length === 1 ? 'entry' : 'entries'} · showing the latest 300`}
+        actions={<SearchInput className={styles.search} value={search} onChange={setSearch} placeholder="Search user, action or details" />}
+        padded={false}
+      >
+        {loading ? <LoadingRows rows={6} /> : error ? (
+          <ErrorState title="We couldn’t load the activity log" error={error} onRetry={load} />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            icon={search ? Icons.search : Icons.document}
+            title={search ? 'Nothing matches your search' : 'No activity recorded yet'}
+            message={search ? 'Try a username or action name.' : moduleFilter === 'ALL' ? 'Actions taken in the system will be listed here.' : 'Try another area.'}
+            action={search && <Button onClick={() => setSearch('')}>Clear search</Button>}
+          />
         ) : (
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead><tr><th>Time</th><th>User</th><th>Module</th><th>Action</th><th>Details</th></tr></thead>
-              <tbody>
-                {logs.map((l) => (
-                  <tr key={l.id}>
-                    <td className={styles.muted}>{fmt(l.timestamp)}</td>
-                    <td>{l.user ? <span className={styles.userCell}>{l.user.username}<span className={styles.roleTag}>{l.user.role}</span></span> : '—'}</td>
-                    <td><span className={styles.moduleChip}>{l.module}</span></td>
-                    <td className={styles.action}>{l.action}</td>
-                    <td className={styles.details} title={prettyMeta(l.remarks)}>{prettyMeta(l.remarks)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            caption="Activity log"
+            rows={rows}
+            dense
+            defaultSort={{ key: 'timestamp', dir: 'desc' }}
+            columns={[
+              {
+                key: 'action', header: 'What happened', primary: true,
+                render: (l) => (
+                  <>
+                    <span className={uiStyles.strong}>{words(l.action)}</span>
+                    <span className={uiStyles.sub}>{MODULE_LABEL[l.module] || words(l.module)}</span>
+                  </>
+                ),
+              },
+              {
+                key: 'user', header: 'By', sortValue: (l) => l.user?.username,
+                render: (l) => (l.user ? (
+                  <span className={styles.userCell}>
+                    <span className={styles.avatar} aria-hidden="true">{l.user.username.slice(0, 2).toUpperCase()}</span>
+                    <span>{l.user.username}<span className={uiStyles.sub}>{ROLE_LABELS[l.user.role] || l.user.role}</span></span>
+                  </span>
+                ) : <Tag tone="neutral">System</Tag>),
+              },
+              { key: 'timestamp', header: 'When', sortValue: (l) => new Date(l.timestamp).getTime(), render: (l) => <span className={uiStyles.muted}>{fmt(l.timestamp)}</span> },
+              { key: 'remarks', header: 'Details', sortable: false, render: (l) => <span className={styles.details} title={prettyMeta(l.remarks)}>{prettyMeta(l.remarks)}</span> },
+            ]}
+          />
         )}
-      </div>
+      </Card>
     </div>
   );
 }
