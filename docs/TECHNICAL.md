@@ -145,7 +145,9 @@ Versions below are the ones locked in `package-lock.json` (Node) or resolved ins
 │       ├── controllers/      HTTP ↔ service translation
 │       ├── services/         business logic and Prisma access
 │       ├── validators/       express-validator chains
-│       ├── sap/              SAP integration, connectors/ (mock, http), mock/ (simulated SAP ERP)
+│       ├── sap/              SAP integration, connectors/ (mock, http), mock/ (simulated SAP ERP, mock inbound consignments)
+│       ├── inbound/          InboundConsignment contract (FOIS / SAP rail records)
+│       ├── placement/        bay recommendation engine, demand provider, geo
 │       └── utils/            AppError, responseHelper, jwt, password, cryptoBox, qrPayload, streamProbe
 ├── frontend/
 │   ├── Dockerfile, nginx.conf, vercel.json
@@ -188,6 +190,8 @@ are `express-validator` chains. `src/config/env.js` is the only file that reads 
 | `BAY_WRITE`           | ADMIN, SUPERVISOR                     | bay create/update/delete                   |
 | `MATERIAL_WRITE`      | ADMIN, SUPERVISOR, OPERATOR           | materials, lots, QR generation             |
 | `OPERATIONS`          | ADMIN, SUPERVISOR, OPERATOR           | mapping, move, remove, scan                |
+| `ALLOCATION_MANAGE`   | ADMIN, SUPERVISOR                     | allot / cancel bays, import FOIS/SAP lots  |
+| `INBOUND_VIEW`        | ADMIN, SUPERVISOR, OPERATOR           | pending FOIS / SAP consignments            |
 | `DISPATCH_CREATE`     | ADMIN, SUPERVISOR, OPERATOR           | create / cancel dispatch                   |
 | `DISPATCH_APPROVE`    | ADMIN, SUPERVISOR                     | approve / reject dispatch                  |
 | `GATE`                | ADMIN, SUPERVISOR, OPERATOR           | gate validation and exit                   |
@@ -297,6 +301,9 @@ means `streamAuthenticate`.
 | POST | `/api/materials`, `/api/lots` | MATERIAL_WRITE |
 | PUT / DELETE | `/api/materials/:id`, `/api/lots/:id` | MATERIAL_WRITE |
 
+`POST /api/lots` takes either `materialId` or an inline `material` object (created in the same
+transaction; `arrivalMode` then required). See [INBOUND.md](INBOUND.md).
+
 **QR** `/api/qr`
 
 | Method | Path | Auth |
@@ -321,6 +328,38 @@ means `streamAuthenticate`.
 | GET | `/api/mappings/lot/:lotId/location` | JWT |
 | GET | `/api/mappings/lot/:lotId/history` | JWT |
 | GET | `/api/mappings/lot/:lotId/active` | JWT |
+
+A lot with an open bay allocation can only be mapped (manual, scan or confirmation) into its
+allotted bay; mapping it there marks the allocation `PLACED`.
+
+**Placement** `/api/placement` (JWT) — arrival mode, bay recommendations, allocation. See
+[BAY_ALLOCATION.md](BAY_ALLOCATION.md).
+
+| Method | Path | Auth |
+|---|---|---|
+| GET | `/api/placement/config` | JWT |
+| GET | `/api/placement/lots?arrivalMode=&stage=&search=` | JWT |
+| GET | `/api/placement/lots/:lotId/recommendations?demandLevel=` | JWT |
+| PUT | `/api/placement/lots/:lotId/arrival-mode` | OPERATIONS |
+| POST | `/api/placement/allocations` | ALLOCATION_MANAGE |
+| POST | `/api/placement/allocations/:id/confirm` | OPERATIONS |
+| POST | `/api/placement/allocations/:id/cancel` | ALLOCATION_MANAGE |
+
+**Inbound** `/api/inbound` (JWT) — rail consignments recorded in FOIS / SAP. See
+[INBOUND.md](INBOUND.md).
+
+| Method | Path | Auth |
+|---|---|---|
+| GET | `/api/inbound/pending?source=&search=` | INBOUND_VIEW |
+| POST | `/api/inbound/import` | ALLOCATION_MANAGE |
+
+**Zones / loading docks** `/api/zones`, `/api/loading-docks` (JWT; writes BAY_WRITE)
+
+| Method | Path | Auth |
+|---|---|---|
+| GET | `/api/zones`, `/api/zones/:id`, `/api/loading-docks`, `/api/loading-docks/:id` | JWT |
+| POST | `/api/zones`, `/api/loading-docks` | BAY_WRITE |
+| PUT / DELETE | `/api/zones/:id`, `/api/loading-docks/:id` | BAY_WRITE |
 
 **Dispatches** `/api/dispatches` (JWT)
 
@@ -455,7 +494,7 @@ Debian-based containers (Render, the Docker image).
 | `User`               | `username`, `email`, bcrypt `password`, `role` (UserRole), `status`, `lastLogin` |
 | `Bay`                | storage location: `bayCode`, `zone`, `latitude`/`longitude`, `polygonCoordinates` (JSON), QR fields (`qrCode`, `qrStatus`, `qrVersion`, `qrGeneratedAt`), `status` |
 | `Material`           | material master: `materialCode`, `materialName`, `materialType`, `status` |
-| `MaterialLot`        | lot of a material: `lotCode`, `quantity`, `unit`, QR fields, `status` (LotStatus) |
+| `MaterialLot`        | lot of a material: `lotCode`, `quantity`, `unit`, QR fields, `status` (LotStatus), `arrivalMode`, `source` (LotSource), `externalRef` + `externalMeta` for FOIS / SAP imports — `(source, externalRef)` unique |
 | `MaterialBayMapping` | lot ↔ bay history: `mappedBy`, `mappedAt`, `unmappedAt`, `status` (MappingStatus) |
 | `Dispatch`           | dispatch request: `dispatchNumber`, quantities, requester/approver, `dispatchStatus`, `vehicleNumber` |
 | `GateValidation`     | gate check for a dispatch: `validationStatus`, `gateExitTime`, validator |
@@ -486,6 +525,10 @@ Debian-based containers (Render, the Docker image).
 | DispatchStatus | PENDING, APPROVED, REJECTED, COMPLETED, CANCELLED |
 | GateValidationStatus | PENDING, VALIDATED, DENIED, EXITED |
 | QRStatus | UNGENERATED, GENERATED |
+| ArrivalMode | RAIL, ROAD |
+| AllocationStatus | ALLOCATED, PLACED, CANCELLED |
+| LocationStatus | ACTIVE, INACTIVE |
+| LotSource | MANUAL, FOIS, SAP |
 | SAPSyncType | MATERIAL, INVENTORY, DISPATCH, STATUS |
 | SAPSyncStatus | PENDING, IN_PROGRESS, SUCCESS, FAILED |
 | SAPValidationType | MATERIAL, LOT, INVENTORY, DISPATCH_APPROVAL, GATE_EXIT |
@@ -525,6 +568,8 @@ entrypoint and by Render's build command):
 20260625120000_phase16_cancelled_vehicle
 20260626120000_phase17_face_registry
 20260627120000_qr_material_status
+20261026120000_arrival_mode_bay_allocation
+20261027120000_inbound_lot_source
 ```
 
 **`20260627120000_qr_material_status`** exists because of schema drift: the `QRStatus` and
@@ -598,6 +643,9 @@ user `app` (uid 1000), and health-checks `http://localhost:8600/health`.
 | `VIDEO_UPLOAD_DIR` | no | `videos` | under `storage/` |
 | `VIDEO_MAX_BYTES` | no | `524288000` | 500 MB |
 | `AI_SERVICE_TOKEN` | for AI | empty | shared with the worker; empty disables `/api/surveillance/ai/*` and face enrollment |
+| `PLACEMENT_MOCK_DEMAND` | no | all `MEDIUM` | JSON placeholder demand: `{"defaultLevel":"MEDIUM","byMaterialType":{"Coil":"HIGH"},"byMaterialCode":{}}` |
+| `PLACEMENT_RECOMMENDATION_COUNT` | no | `3` | bays flagged as suggestions (1–20) |
+| `PLACEMENT_PREFER_EMPTY_BAYS` | no | `true` | rank empty bays before shared ones |
 | `SURVEILLANCE_SNAPSHOT_DIR` | no | `surveillance` | under `storage/` |
 | `SURVEILLANCE_INGEST_LIMIT` | no | `20mb` | |
 | `SURVEILLANCE_DEFAULT_COOLDOWN_SEC` | no | `30` | |
@@ -791,6 +839,12 @@ from production once they are not needed.
 - **The AI worker must be running and reachable**: without it there are no AI alerts and face
   enrollment fails with 503. With a cloud backend the enrollment path depends on the ngrok tunnel.
 - The enrollment API uses Flask's development server (single process, threaded).
+- **Bay recommendations are a static placeholder.** Demand comes from configuration, not dispatch
+  history, and distances are straight-line between surveyed coordinates, not travel routes. See
+  [BAY_ALLOCATION.md](BAY_ALLOCATION.md) for the open layout decisions.
+- **FOIS / SAP rail inbound uses a mock dataset.** The real record format and access method are
+  not confirmed; with `SAP_MODE=http` the pending list reports "not configured". See
+  [INBOUND.md](INBOUND.md).
 
 ---
 
